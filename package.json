@@ -1,0 +1,23 @@
+{
+  "name": "swagger-graphql-schema",
+  "version": "1.0.0",
+  "main": "./lib/index.js",
+  "license": "MIT",
+  "scripts": {
+    "build": "node ./node_modules/babel-cli/bin/babel src/ --out-dir lib --copy-files",
+    "build:watch": "yarn run build --watch"
+  },
+  "devDependencies": {
+    "babel-cli": "^6.26.0",
+    "re-app-builder": "https://github.com/stackscz/re-app-builder.git#93b67c3ed616a73ed023f11715afe543c8dbb2c7"
+  },
+  "dependencies": {
+    "invariant": "^2.2.2",
+    "lodash": "^4.17.4",
+    "uri-templates": "^0.2.0"
+  },
+  "peerDependencies": {
+    "axios": "^0.16.2",
+    "graphql": "^0.11.6"
+  }
+}

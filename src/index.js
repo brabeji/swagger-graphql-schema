@@ -54,21 +54,6 @@ export const findQueriesDescriptions = (paths) => {
 	);
 };
 
-// const computeTypeFields = (fields, queriesDescriptions, typesBag) => {
-// 	mapValues(
-// 		fields,
-// 		(queryDescription, queryName) => {
-// 			debugger;
-// 			return {
-// 				type: new GraphQLList(PageType),
-// 				resolve: (root, args) => {
-// 					debugger;
-// 				},
-// 			};
-// 		},
-// 	)
-// };
-
 const scalartypeMap = {
 	integer: GraphQLInt,
 	string: GraphQLString,
@@ -82,7 +67,7 @@ const checkObjectSchemaForUnsupportedFeatures = (schema) => {
 };
 
 const computeType = (schema, queriesDescriptions, swagger, typesBag, parentTypePath = '') => {
-	console.log('parentTypePath', parentTypePath, 'schema', g(schema, 'title'), schema);
+	// console.log('parentTypePath', parentTypePath, 'schema', g(schema, 'title'), schema);
 	const valueType = g(schema, 'type', g(schema, 'anyOf', 'object'));
 	if (isArray(valueType)) {
 		console.log('shiz');
@@ -188,6 +173,11 @@ const computeType = (schema, queriesDescriptions, swagger, typesBag, parentTypeP
 													return axios.get(resourceUri)
 														.then(
 															(response) => response.data
+														).catch(
+															(error) => {
+																console.log(`Resolver error for GET "${resourceUri}"`);
+																throw error;
+															}
 														)
 												}
 											} : {}
@@ -213,8 +203,6 @@ const computeType = (schema, queriesDescriptions, swagger, typesBag, parentTypeP
 
 const swaggerToSchema = (swagger) => {
 	const queriesDescriptions = findQueriesDescriptions(swagger.paths);
-
-	console.log(queriesDescriptions);
 
 	const typeBag = {};
 

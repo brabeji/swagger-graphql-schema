@@ -9,6 +9,8 @@
   },
   "devDependencies": {
     "babel-cli": "^6.26.0",
+    "babel-plugin-transform-object-rest-spread": "^6.26.0",
+    "babel-preset-env": "^1.6.0",
     "re-app-builder": "https://github.com/stackscz/re-app-builder.git#93b67c3ed616a73ed023f11715afe543c8dbb2c7"
   },
   "dependencies": {

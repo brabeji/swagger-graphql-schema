@@ -1,28 +1,19 @@
 {
-  "extends": "./node_modules/re-app-builder/base-babel-config.json",
-  "plugins": [
-	"tcomb",
+  "presets": [
 	[
-	  "module-resolver",
+	  "env",
 	  {
-		"root": [
-		  "./src"
-		],
-		"alias": {
-		  "mocks": "./mocks",
-		  "i18n": "./src/i18n",
-		  "components": "./src/components",
-		  "examples": "./src/examples",
-		  "decorators": "./src/decorators",
-		  "form-controls": "./src/form-controls",
-		  "form-fields": "./src/form-fields",
-		  "fonts": "./src/fonts",
-		  "modules": "./src/modules",
-		  "screens": "./src/screens",
-		  "stylesheets": "./src/stylesheets",
-		  "utils": "./src/utils",
-		  "spec": "./spec"
+		"targets": {
+		  "node": "6"
 		}
+	  }
+	]
+  ],
+  "plugins": [
+	[
+	  "transform-object-rest-spread",
+	  {
+		"useBuiltIns": true
 	  }
 	]
   ]

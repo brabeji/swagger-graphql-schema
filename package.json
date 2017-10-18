@@ -16,6 +16,7 @@
   "dependencies": {
     "invariant": "^2.2.2",
     "lodash": "^4.17.4",
+    "traverse": "^0.6.6",
     "uri-templates": "^0.2.0"
   },
   "peerDependencies": {

@@ -1,4 +1,4 @@
-import { get as g, reduce, mapValues, isArray, find, merge } from 'lodash';
+import { get as g, reduce, mapValues, isArray, find, merge, first } from 'lodash';
 import invariant from 'invariant';
 import traverse from 'traverse';
 import axios from 'axios';
@@ -154,7 +154,8 @@ const computeType = (inputSchema, queriesDescriptions, swagger, typesBag, parent
 													if (fieldValue) {
 														return fieldValue;
 													}
-													const resourceUriTemplate = `http://${g(swagger, 'host')}${g(swagger, 'basePath')}${g(queryDescriptor, 'path')}`;
+													const scheme = first(g(swagger, 'schemes', ['http']));
+													const resourceUriTemplate = `${scheme}://${g(swagger, 'host')}${g(swagger, 'basePath')}${g(queryDescriptor, 'path')}`;
 													// TODO translate params
 													const argsValues = { root, ...args };
 													const parametersValues = parameters.reduce(

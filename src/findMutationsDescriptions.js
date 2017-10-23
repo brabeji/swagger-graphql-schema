@@ -22,7 +22,7 @@ const findMutationsDescriptions = (paths) => {
 						if (operationId && schema && (lcMethod === 'put' || lcMethod === 'post' || lcMethod === 'delete')) {
 							const parameters = g(operation, 'parameters', []).concat(g(pathMethods, 'parameters', []));
 							const inputSchema = g(find(parameters, { in: 'body' }), 'schema');
-							console.log('inputSchema', inputSchema);
+							// console.log('inputSchema', inputSchema);
 							return {
 								...acc,
 								[operationId]: {
@@ -31,6 +31,7 @@ const findMutationsDescriptions = (paths) => {
 									schema: schema.title ? schema : { ...schema, title: operationId },
 									// schema,
 									parameters,
+									operationMethod: lcMethod
 								},
 							};
 						}

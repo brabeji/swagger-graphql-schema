@@ -9,7 +9,9 @@ import findMutationsDescriptions from './findMutationsDescriptions';
 import {
 	GraphQLSchema,
 	GraphQLObjectType,
+	GraphQLInputObjectType,
 	GraphQLInt,
+	GraphQLFloat,
 	GraphQLString,
 	GraphQLBoolean,
 	GraphQLList,
@@ -21,13 +23,14 @@ import {
 
 const scalartypeMap = {
 	integer: GraphQLInt,
+	number: GraphQLFloat,
 	string: GraphQLString,
 	boolean: GraphQLBoolean,
 };
 
 const checkObjectSchemaForUnsupportedFeatures = (schema) => {
 	if (g(schema, 'additionalProperties')) {
-		invariant(false, 'Object schema for %s has unsupported feature "additionalProperties"', getSchemaJSON());
+		invariant(false, 'Object schema for %s has unsupported feature "additionalProperties"', JSON.stringify(schema, null, 2));
 	}
 };
 
@@ -47,7 +50,7 @@ const findChildSchemas = (schema, swagger) => {
 	return acc;
 };
 
-const computeType = (inputSchema, queriesDescriptions, swagger, typesBag, parentTypePath = '') => {
+const computeType = (inputSchema, operationsDescriptions, swagger, typesBag, parentTypePath = '') => {
 	// console.log('parentTypePath', parentTypePath, 'schema', g(schema, 'title'), schema);
 	const allOf = g(inputSchema, 'allOf');
 	const schema = inputSchema;
@@ -62,7 +65,7 @@ const computeType = (inputSchema, queriesDescriptions, swagger, typesBag, parent
 		switch (valueType) {
 			case 'array':
 				const itemsSchema = g(schema, 'items');
-				return new GraphQLList(computeType(itemsSchema, queriesDescriptions, swagger, typesBag, parentTypePath));
+				return new GraphQLList(computeType(itemsSchema, operationsDescriptions, swagger, typesBag, parentTypePath));
 				break;
 			case 'object':
 				checkObjectSchemaForUnsupportedFeatures(schema);
@@ -77,7 +80,11 @@ const computeType = (inputSchema, queriesDescriptions, swagger, typesBag, parent
 				// let hasInterfaces = false;
 				const discriminator = g(schema, 'discriminator');
 				const isInterface = !!discriminator;
-				const TypeConstructor = !isInterface ? GraphQLObjectType : GraphQLInterfaceType;
+				const isInput = g(schema, 'x-isInput', false);
+				let TypeConstructor = !isInterface ? GraphQLObjectType : GraphQLInterfaceType;
+				if (isInput) {
+					TypeConstructor = GraphQLInputObjectType;
+				}
 				let additionalConfig = {};
 				if (isInterface) {
 					const discriminatorPropertyName = g(discriminator, 'propertyName');
@@ -101,7 +108,7 @@ const computeType = (inputSchema, queriesDescriptions, swagger, typesBag, parent
 								}
 								return [
 									...acc,
-									computeType(partialSchema, queriesDescriptions, swagger, typesBag),
+									computeType(partialSchema, operationsDescriptions, swagger, typesBag),
 								];
 							},
 							[],
@@ -119,29 +126,42 @@ const computeType = (inputSchema, queriesDescriptions, swagger, typesBag, parent
 								properties,
 								(propertySchema, propertyName) => {
 									const operationId = g(links, propertyName);
-									const queryDescriptor = g(queriesDescriptions, operationId);
+									const operationDescriptor = g(operationsDescriptions, operationId);
 									const newParentTypePath = schemaTitle ? `${schemaTitle}_${propertyName}` : `${parentTypePath ? `${parentTypePath}_${propertyName}` : ''}`;
-									const isRootQuery = g(propertySchema, 'x-isRootQuery');
-									const parameters = g(queryDescriptor, 'parameters');
+									const isRootQuery = g(propertySchema, 'x-isRootOperation');
+									const parameters = g(operationDescriptor, 'parameters');
 									return {
-										type: computeType(propertySchema, queriesDescriptions, swagger, typesBag, newParentTypePath),
+										type: computeType(propertySchema, operationsDescriptions, swagger, typesBag, newParentTypePath),
 										...(
-											queryDescriptor ? {
+											operationDescriptor ? {
 												args: parameters.reduce(
-													(acc, { name: paramName, required, ['in']: paramIn, type: parameterType, ['x-argPath']: argPath }) => {
+													(acc, parameter) => {
+														const {
+															name: paramName,
+															required,
+															['in']: paramIn,
+															type: parameterType,
+															['x-argPath']: argPath,
+															schema: paramSchema,
+														} = parameter;
 														if (isRootQuery || !argPath) {
-															// this is a root query, all parameters are required
-
+															// this is a root operation or resolution path is not defined => parameter is required
 															let type = GraphQLString; // TODO proper types
 															if (parameterType) {
-																type = computeType({ type: parameterType }, queriesDescriptions, swagger, typesBag, newParentTypePath);
+																type = computeType({ type: parameterType }, operationsDescriptions, swagger, typesBag, newParentTypePath);
+															}
+															if (paramIn === 'body' && paramSchema) {
+																type = computeType({
+																	...paramSchema,
+																	['x-isInput']: true
+																}, operationsDescriptions, swagger, typesBag, newParentTypePath);
 															}
 															if (required || paramIn === 'path') {
 																type = new GraphQLNonNull(type);
 															}
 															return {
 																...acc,
-																[paramName]: { type }
+																[paramName]: { type },
 															}
 														}
 														return acc;
@@ -155,7 +175,7 @@ const computeType = (inputSchema, queriesDescriptions, swagger, typesBag, parent
 														return fieldValue;
 													}
 													const scheme = first(g(swagger, 'schemes', ['http']));
-													const resourceUriTemplate = `${scheme}://${g(swagger, 'host')}${g(swagger, 'basePath')}${g(queryDescriptor, 'path')}`;
+													const resourceUriTemplate = `${scheme}://${g(swagger, 'host')}${g(swagger, 'basePath')}${g(operationDescriptor, 'path')}`;
 													// TODO translate params
 													const argsValues = { root, ...args };
 													const parametersValues = parameters.reduce(
@@ -192,10 +212,13 @@ const computeType = (inputSchema, queriesDescriptions, swagger, typesBag, parent
 															queryParams: parametersValues.queryParams,
 														}
 													);
-													return axios.get(
-														resourceUri,
-														context.http
-													).then(
+													const method = g(operationDescriptor, 'operationMethod', 'get');
+													let callArguments = [resourceUri, context.http];
+													const bodyParameter = find(parameters, { ['in']: 'body' });
+													if (bodyParameter) {
+														callArguments = [callArguments[0], args[bodyParameter.name], callArguments[1]];
+													}
+													return axios[method](...callArguments).then(
 														(response) => response.data
 													).catch(
 														(error) => {
@@ -219,7 +242,7 @@ const computeType = (inputSchema, queriesDescriptions, swagger, typesBag, parent
 					const childTypes = childSchemas.reduce(
 						(acc, childSchema) => ({
 							...acc,
-							[g(childSchema, 'title')]: computeType(childSchema, queriesDescriptions, swagger, typesBag)
+							[g(childSchema, 'title')]: computeType(childSchema, operationsDescriptions, swagger, typesBag)
 						}),
 						{}
 					);
@@ -254,10 +277,12 @@ const gatherObjectTypes = (schema, queriesDescriptions, swagger, typesBag) => {
 
 const swaggerToSchema = (swagger) => {
 	const queriesDescriptions = findQueriesDescriptions(swagger.paths);
-	// const mutationsDescriptions = findMutationsDescriptions(swagger.paths);
+	const mutationsDescriptions = findMutationsDescriptions(swagger.paths);
 
 	// console.log('mutationsDescriptions', mutationsDescriptions);
 	// debugger;
+
+	const typesBag = {};
 
 	const querySchema = {
 		title: 'Query',
@@ -265,26 +290,48 @@ const swaggerToSchema = (swagger) => {
 		description: 'query root type',
 		properties: mapValues(
 			queriesDescriptions,
-			({ schema }) => ({ ...schema, 'x-isRootQuery': true }),
+			({ schema }) => ({ ...schema, 'x-isRootOperation': true }),
 		),
 		'x-links': mapValues(
 			queriesDescriptions,
 			(_, linkName) => linkName,
 		)
 	};
-
-	const typesBag = {};
 	gatherObjectTypes(querySchema, queriesDescriptions, swagger, typesBag);
-
 	const QueryType = computeType(
 		querySchema,
 		queriesDescriptions,
 		swagger,
 		typesBag
 	);
+
+	const mutationSchema = {
+		title: 'Mutation',
+		type: 'object',
+		description: 'mutation root type',
+		properties: mapValues(
+			mutationsDescriptions,
+			({ schema }) => ({ ...schema, 'x-isRootOperation': true }),
+		),
+		'x-links': mapValues(
+			mutationsDescriptions,
+			(_, linkName) => linkName,
+		)
+	};
+	gatherObjectTypes(mutationSchema, mutationsDescriptions, swagger, typesBag);
+	const MutationType = computeType(
+		mutationSchema,
+		mutationsDescriptions,
+		swagger,
+		typesBag
+	);
+
+	// debugger;
+
 	const schema = new GraphQLSchema({
 		types: Object.values(typesBag),
 		query: QueryType,
+		mutation: MutationType,
 	});
 	return schema;
 };

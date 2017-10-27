@@ -77,7 +77,8 @@ const computeType = (inputSchema, operationsDescriptions, swagger, typesBag, par
 				checkObjectSchemaForUnsupportedFeatures(schema);
 				const schemaTitle = g(schema, 'title');
 				let typeName = schemaTitle || parentTypePath;
-				typeName = isInput && !endsWith(typeName, 'Input') ? `${typeName}Input` : typeName;
+				const shouldAppendInputToTypeName = isInput && !endsWith(typeName, 'Input') && !!typesBag[typeName];
+				typeName = shouldAppendInputToTypeName ? `${typeName}Input` : typeName;
 
 				if (typesBag[typeName]) {
 					return typesBag[typeName];

@@ -1,4 +1,4 @@
-import { get as g, reduce, mapValues, isArray, find, merge, first } from 'lodash';
+import { get as g, reduce, mapValues, isArray, find, merge, first, endsWith } from 'lodash';
 import invariant from 'invariant';
 import traverse from 'traverse';
 import axios from 'axios';
@@ -55,6 +55,8 @@ const computeType = (inputSchema, operationsDescriptions, swagger, typesBag, par
 	const allOf = g(inputSchema, 'allOf');
 	const schema = inputSchema;
 	const valueType = g(schema, 'type', 'object');
+	const isInput = g(schema, 'x-isInput', false);
+
 	if (isArray(valueType)) {
 		throw new Error('not implemented yet');
 	} else {
@@ -65,12 +67,18 @@ const computeType = (inputSchema, operationsDescriptions, swagger, typesBag, par
 		switch (valueType) {
 			case 'array':
 				const itemsSchema = g(schema, 'items');
-				return new GraphQLList(computeType(itemsSchema, operationsDescriptions, swagger, typesBag, parentTypePath));
+
+				return new GraphQLList(computeType({
+					...itemsSchema,
+					...(isInput ? { 'x-isInput': true }: {}),
+				}, operationsDescriptions, swagger, typesBag, parentTypePath));
 				break;
 			case 'object':
 				checkObjectSchemaForUnsupportedFeatures(schema);
 				const schemaTitle = g(schema, 'title');
-				const typeName = schemaTitle || parentTypePath;
+				let typeName = schemaTitle || parentTypePath;
+				typeName = isInput && !endsWith(typeName, 'Input') ? `${typeName}Input` : typeName;
+
 				if (typesBag[typeName]) {
 					return typesBag[typeName];
 				}
@@ -80,7 +88,6 @@ const computeType = (inputSchema, operationsDescriptions, swagger, typesBag, par
 				// let hasInterfaces = false;
 				const discriminator = g(schema, 'discriminator');
 				const isInterface = !!discriminator;
-				const isInput = g(schema, 'x-isInput', false);
 				let TypeConstructor = !isInterface ? GraphQLObjectType : GraphQLInterfaceType;
 				if (isInput) {
 					TypeConstructor = GraphQLInputObjectType;
@@ -122,115 +129,127 @@ const computeType = (inputSchema, operationsDescriptions, swagger, typesBag, par
 						interfaces: getInterfaces,
 						...additionalConfig,
 						fields: () => {
-							return mapValues(
+							return reduce(
 								properties,
-								(propertySchema, propertyName) => {
+								(acc, propertySchema, propertyName) => {
 									const operationId = g(links, propertyName);
 									const operationDescriptor = g(operationsDescriptions, operationId);
 									const newParentTypePath = schemaTitle ? `${schemaTitle}_${propertyName}` : `${parentTypePath ? `${parentTypePath}_${propertyName}` : ''}`;
 									const isRootQuery = g(propertySchema, 'x-isRootOperation');
+									const isReadOnly = !isRootQuery && g(propertySchema, 'x-readOnly');
 									const parameters = g(operationDescriptor, 'parameters');
+
+									if (isReadOnly && isInput) {
+										return acc;
+									}
+
 									return {
-										type: computeType(propertySchema, operationsDescriptions, swagger, typesBag, newParentTypePath),
-										...(
-											operationDescriptor ? {
-												args: parameters.reduce(
-													(acc, parameter) => {
-														const {
-															name: paramName,
-															required,
-															['in']: paramIn,
-															type: parameterType,
-															['x-argPath']: argPath,
-															schema: paramSchema,
-														} = parameter;
-														if (isRootQuery || !argPath) {
-															// this is a root operation or resolution path is not defined => parameter is required
-															let type = GraphQLString; // TODO proper types
-															if (parameterType) {
-																type = computeType({ type: parameterType }, operationsDescriptions, swagger, typesBag, newParentTypePath);
-															}
-															if (paramIn === 'body' && paramSchema) {
-																type = computeType({
-																	...paramSchema,
-																	['x-isInput']: true
-																}, operationsDescriptions, swagger, typesBag, newParentTypePath);
-															}
-															if (required || paramIn === 'path') {
-																type = new GraphQLNonNull(type);
-															}
-															return {
-																...acc,
-																[paramName]: { type },
-															}
-														}
-														return acc;
-													},
-													{}
-												),
-												resolve: (root, args, context, info) => {
-													// yay, make request!
-													const fieldValue = g(root, propertyName);
-													if (fieldValue) {
-														return fieldValue;
-													}
-													const scheme = first(g(swagger, 'schemes', ['http']));
-													const resourceUriTemplate = `${scheme}://${g(swagger, 'host')}${g(swagger, 'basePath')}${g(operationDescriptor, 'path')}`;
-													// TODO translate params
-													const argsValues = { root, ...args };
-													const parametersValues = parameters.reduce(
-														(acc, { name: paramName, ['x-argPath']: argPath, ['in']: paramIn }) => {
-															const value = g(argsValues, argPath || paramName);
-															if (value && paramIn === 'query') {
+										...acc,
+										[propertyName]: {
+											type: computeType({
+												...propertySchema,
+												...(isInput ? { 'x-isInput': true }: {}),
+											}, operationsDescriptions, swagger, typesBag, newParentTypePath),
+											...(
+												operationDescriptor ? {
+													args: parameters.reduce(
+														(acc, parameter) => {
+															const {
+																name: paramName,
+																required,
+																['in']: paramIn,
+																type: parameterType,
+																['x-argPath']: argPath,
+																schema: paramSchema,
+															} = parameter;
+															if (isRootQuery || !argPath) {
+																// this is a root operation or resolution path is not defined => parameter is required
+																let type = GraphQLString; // TODO proper types
+																if (parameterType) {
+																	type = computeType({ type: parameterType }, operationsDescriptions, swagger, typesBag, newParentTypePath);
+																}
+																if (paramIn === 'body' && paramSchema) {
+																	type = computeType({
+																		...paramSchema,
+																		['x-isInput']: true
+																	}, operationsDescriptions, swagger, typesBag, newParentTypePath);
+																}
+																if (required || paramIn === 'path') {
+																	type = new GraphQLNonNull(type);
+																}
 																return {
 																	...acc,
-																	queryParams: {
-																		...acc.queryParams,
-																		[paramName]: value
-																	}
-																};
-															} else if (value && paramIn === 'path') {
-																return {
-																	...acc,
-																	pathParams: {
-																		...acc.pathParams,
-																		[paramName]: value
-																	}
-																};
+																	[paramName]: { type },
+																}
 															}
 															return acc;
 														},
-														{
-															pathParams: {},
-															queryParams: {},
-														},
-													);
-													const template = new UriTemplate(`${resourceUriTemplate}{?queryParams*}`);
-													const resourceUri = template.fill(
-														{
-															...parametersValues.pathParams,
-															queryParams: parametersValues.queryParams,
+														{}
+													),
+													resolve: (root, args, context, info) => {
+														// yay, make request!
+														const fieldValue = g(root, propertyName);
+														if (fieldValue) {
+															return fieldValue;
 														}
-													);
-													const method = g(operationDescriptor, 'operationMethod', 'get');
-													let callArguments = [resourceUri, context.http];
-													const bodyParameter = find(parameters, { ['in']: 'body' });
-													if (bodyParameter) {
-														callArguments = [callArguments[0], args[bodyParameter.name], callArguments[1]];
+														const scheme = first(g(swagger, 'schemes', ['http']));
+														const resourceUriTemplate = `${scheme}://${g(swagger, 'host')}${g(swagger, 'basePath')}${g(operationDescriptor, 'path')}`;
+														// TODO translate params
+														const argsValues = { root, ...args };
+														const parametersValues = parameters.reduce(
+															(acc, { name: paramName, ['x-argPath']: argPath, ['in']: paramIn }) => {
+																const value = g(argsValues, argPath || paramName);
+																if (value && paramIn === 'query') {
+																	return {
+																		...acc,
+																		queryParams: {
+																			...acc.queryParams,
+																			[paramName]: value
+																		}
+																	};
+																} else if (value && paramIn === 'path') {
+																	return {
+																		...acc,
+																		pathParams: {
+																			...acc.pathParams,
+																			[paramName]: value
+																		}
+																	};
+																}
+																return acc;
+															},
+															{
+																pathParams: {},
+																queryParams: {},
+															},
+														);
+														const template = new UriTemplate(`${resourceUriTemplate}{?queryParams*}`);
+														const resourceUri = template.fill(
+															{
+																...parametersValues.pathParams,
+																queryParams: parametersValues.queryParams,
+															}
+														);
+														const method = g(operationDescriptor, 'operationMethod', 'get');
+														let callArguments = [resourceUri, context.http];
+														const bodyParameter = find(parameters, { ['in']: 'body' });
+														if (bodyParameter) {
+															callArguments = [callArguments[0], args[bodyParameter.name], callArguments[1]];
+														}
+														return axios[method](...callArguments).then(
+															(response) => response.data
+														).catch(
+															(error) => {
+																console.log(`Resolver error for GET "${resourceUri}"`);
+																throw error;
+															}
+														)
 													}
-													return axios[method](...callArguments).then(
-														(response) => response.data
-													).catch(
-														(error) => {
-															console.log(`Resolver error for GET "${resourceUri}"`);
-															throw error;
-														}
-													)
-												}
-											} : {}
-										),
+												} : {}
+											),
+										}
 									}
-								},
+								}, {}
 							);
 						},
 					}
@@ -333,6 +352,7 @@ const swaggerToSchema = (swagger) => {
 		query: QueryType,
 		mutation: MutationType,
 	});
+
 	return schema;
 };
 

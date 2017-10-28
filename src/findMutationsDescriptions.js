@@ -1,4 +1,4 @@
-import { get as g, reduce, mapValues, isArray, find } from 'lodash';
+import { get as g, reduce, mapValues, isArray, find, includes } from 'lodash';
 
 const findMutationsDescriptions = (paths) => {
 	return reduce(
@@ -19,7 +19,7 @@ const findMutationsDescriptions = (paths) => {
 							)
 						);
 						const lcMethod = method.toLowerCase();
-						if (operationId && schema && (lcMethod === 'put' || lcMethod === 'post' || lcMethod === 'delete')) {
+						if (operationId && schema && (includes(['put', 'post', 'patch', 'delete'], lcMethod))) {
 							const parameters = g(operation, 'parameters', []).concat(g(pathMethods, 'parameters', []));
 							const inputSchema = g(find(parameters, { in: 'body' }), 'schema');
 							// console.log('inputSchema', inputSchema);

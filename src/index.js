@@ -62,7 +62,7 @@ const computeType = (inputSchema, operationsDescriptions, swagger, typesBag, par
 	} else {
 		const description = g(schema, 'description');
 		if (g(schema, 'format') === 'uniqueId') {
-			return GraphQLID;
+			return new GraphQLNonNull(GraphQLID);
 		}
 		switch (valueType) {
 			case 'array':
@@ -164,7 +164,7 @@ const computeType = (inputSchema, operationsDescriptions, swagger, typesBag, par
 															} = parameter;
 															if (isRootQuery || !argPath) {
 																// this is a root operation or resolution path is not defined => parameter is required
-																let type = GraphQLString; // TODO proper types
+																let type = GraphQLString;
 																if (parameterType) {
 																	type = computeType({ type: parameterType }, operationsDescriptions, swagger, typesBag, newParentTypePath);
 																}
@@ -298,9 +298,6 @@ const swaggerToSchema = (swagger) => {
 	const queriesDescriptions = findQueriesDescriptions(swagger.paths);
 	const mutationsDescriptions = findMutationsDescriptions(swagger.paths);
 
-	// console.log('mutationsDescriptions', mutationsDescriptions);
-	// debugger;
-
 	const typesBag = {};
 
 	const querySchema = {
@@ -344,8 +341,6 @@ const swaggerToSchema = (swagger) => {
 		swagger,
 		typesBag
 	);
-
-	// debugger;
 
 	const schema = new GraphQLSchema({
 		types: Object.values(typesBag),

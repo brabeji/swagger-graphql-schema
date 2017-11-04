@@ -1,4 +1,4 @@
-import { get as g, reduce, mapValues, isArray, find, merge, first, endsWith } from 'lodash';
+import { get as g, reduce, mapValues, isArray, find, merge, first, endsWith, includes } from 'lodash';
 import invariant from 'invariant';
 import traverse from 'traverse';
 import axios from 'axios';
@@ -50,7 +50,7 @@ const findChildSchemas = (schema, swagger) => {
 	return acc;
 };
 
-const computeType = (inputSchema, operationsDescriptions, swagger, typesBag, parentTypePath = '') => {
+const computeType = (inputSchema, operationsDescriptions, swagger, idFormats, typesBag, parentTypePath = '') => {
 	// console.log('parentTypePath', parentTypePath, 'schema', g(schema, 'title'), schema);
 	const allOf = g(inputSchema, 'allOf');
 	const schema = inputSchema;
@@ -61,7 +61,7 @@ const computeType = (inputSchema, operationsDescriptions, swagger, typesBag, par
 		throw new Error('not implemented yet');
 	} else {
 		const description = g(schema, 'description');
-		if (g(schema, 'format') === 'uniqueId') {
+		if (includes(idFormats, g(schema, 'format'))) {
 			return new GraphQLNonNull(GraphQLID);
 		}
 		switch (valueType) {
@@ -70,8 +70,8 @@ const computeType = (inputSchema, operationsDescriptions, swagger, typesBag, par
 
 				return new GraphQLList(computeType({
 					...itemsSchema,
-					...(isInput ? { 'x-isInput': true }: {}),
-				}, operationsDescriptions, swagger, typesBag, parentTypePath));
+					...(isInput ? { 'x-isInput': true } : {}),
+				}, operationsDescriptions, swagger, idFormats, typesBag, parentTypePath));
 				break;
 			case 'object':
 				checkObjectSchemaForUnsupportedFeatures(schema);
@@ -116,7 +116,7 @@ const computeType = (inputSchema, operationsDescriptions, swagger, typesBag, par
 								}
 								return [
 									...acc,
-									computeType(partialSchema, operationsDescriptions, swagger, typesBag),
+									computeType(partialSchema, operationsDescriptions, swagger, idFormats, typesBag),
 								];
 							},
 							[],
@@ -149,8 +149,8 @@ const computeType = (inputSchema, operationsDescriptions, swagger, typesBag, par
 										[propertyName]: {
 											type: computeType({
 												...propertySchema,
-												...(isInput ? { 'x-isInput': true }: {}),
-											}, operationsDescriptions, swagger, typesBag, newParentTypePath),
+												...(isInput ? { 'x-isInput': true } : {}),
+											}, operationsDescriptions, swagger, idFormats, typesBag, newParentTypePath),
 											...(
 												operationDescriptor ? {
 													args: parameters.reduce(
@@ -167,13 +167,13 @@ const computeType = (inputSchema, operationsDescriptions, swagger, typesBag, par
 																// this is a root operation or resolution path is not defined => parameter is required
 																let type = GraphQLString;
 																if (parameterType) {
-																	type = computeType({ type: parameterType }, operationsDescriptions, swagger, typesBag, newParentTypePath);
+																	type = computeType({ type: parameterType }, operationsDescriptions, swagger, idFormats, typesBag, newParentTypePath);
 																}
 																if (paramIn === 'body' && paramSchema) {
 																	type = computeType({
 																		...paramSchema,
 																		['x-isInput']: true
-																	}, operationsDescriptions, swagger, typesBag, newParentTypePath);
+																	}, operationsDescriptions, swagger, idFormats, typesBag, newParentTypePath);
 																}
 																if (required || paramIn === 'path') {
 																	type = new GraphQLNonNull(type);
@@ -262,7 +262,7 @@ const computeType = (inputSchema, operationsDescriptions, swagger, typesBag, par
 					const childTypes = childSchemas.reduce(
 						(acc, childSchema) => ({
 							...acc,
-							[g(childSchema, 'title')]: computeType(childSchema, operationsDescriptions, swagger, typesBag)
+							[g(childSchema, 'title')]: computeType(childSchema, operationsDescriptions, swagger, idFormats, typesBag)
 						}),
 						{}
 					);
@@ -280,7 +280,7 @@ const computeType = (inputSchema, operationsDescriptions, swagger, typesBag, par
 	}
 };
 
-const gatherObjectTypes = (schema, queriesDescriptions, swagger, typesBag) => {
+const gatherObjectTypes = (schema, queriesDescriptions, swagger, idFormats, typesBag) => {
 	traverse(schema).forEach(
 		(node) => {
 			const title = g(node, 'title');
@@ -289,13 +289,13 @@ const gatherObjectTypes = (schema, queriesDescriptions, swagger, typesBag) => {
 			const hasAllOf = g(node, 'allOf');
 			const isObjectType = hasTitle && (hasProperties || hasAllOf);
 			if (isObjectType) {
-				typesBag[title] = computeType(node, queriesDescriptions, swagger, typesBag);
+				typesBag[title] = computeType(node, queriesDescriptions, swagger, idFormats, typesBag);
 			}
 		},
 	)
 };
 
-const swaggerToSchema = (swagger) => {
+const swaggerToSchema = (swagger, idFormats = ['uniqueId', 'uuid']) => {
 	const queriesDescriptions = findQueriesDescriptions(swagger.paths);
 	const mutationsDescriptions = findMutationsDescriptions(swagger.paths);
 
@@ -314,11 +314,12 @@ const swaggerToSchema = (swagger) => {
 			(_, linkName) => linkName,
 		)
 	};
-	gatherObjectTypes(querySchema, queriesDescriptions, swagger, typesBag);
+	gatherObjectTypes(querySchema, queriesDescriptions, swagger, idFormats, typesBag);
 	const QueryType = computeType(
 		querySchema,
 		queriesDescriptions,
 		swagger,
+		idFormats,
 		typesBag
 	);
 
@@ -335,11 +336,12 @@ const swaggerToSchema = (swagger) => {
 			(_, linkName) => linkName,
 		)
 	};
-	gatherObjectTypes(mutationSchema, mutationsDescriptions, swagger, typesBag);
+	gatherObjectTypes(mutationSchema, mutationsDescriptions, swagger, idFormats, typesBag);
 	const MutationType = computeType(
 		mutationSchema,
 		mutationsDescriptions,
 		swagger,
+		idFormats,
 		typesBag
 	);
 

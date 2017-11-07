@@ -10,6 +10,8 @@ const findMutationsDescriptions = (paths) => {
 					pathMethods,
 					(acc, operation, method) => {
 						const operationId = g(operation, 'operationId');
+						const consumes = g(operation, 'consumes', []);
+						const produces = g(operation, 'produces', []);
 						const schema = g(
 							operation,
 							['responses', '200', 'schema'],
@@ -31,7 +33,9 @@ const findMutationsDescriptions = (paths) => {
 									schema: schema.title ? schema : { ...schema, title: operationId },
 									// schema,
 									parameters,
-									operationMethod: lcMethod
+									operationMethod: lcMethod,
+									consumes,
+									produces,
 								},
 							};
 						}

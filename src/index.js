@@ -1,4 +1,4 @@
-import { get as g, reduce, mapValues, isArray, find, merge, first, endsWith, includes } from 'lodash';
+import { get as g, reduce, mapValues, isArray, find, merge, first, endsWith, includes, filter, every, each } from 'lodash';
 import invariant from 'invariant';
 import traverse from 'traverse';
 import axios from 'axios';
@@ -21,11 +21,31 @@ import {
 	GraphQLInterfaceType,
 } from 'graphql';
 
+
+const FileInputType = new GraphQLInputObjectType({
+	name: 'FileInput',
+	fields: {
+		name: {
+			type: new GraphQLNonNull(GraphQLString),
+		},
+		type: {
+			type: new GraphQLNonNull(GraphQLString),
+		},
+		size: {
+			type: new GraphQLNonNull(GraphQLInt),
+		},
+		path: {
+			type: new GraphQLNonNull(GraphQLString),
+		},
+	},
+});
+
 const scalartypeMap = {
 	integer: GraphQLInt,
 	number: GraphQLFloat,
 	string: GraphQLString,
 	boolean: GraphQLBoolean,
+	file: FileInputType,
 };
 
 const checkObjectSchemaForUnsupportedFeatures = (schema) => {
@@ -50,6 +70,13 @@ const findChildSchemas = (schema, swagger) => {
 	return acc;
 };
 
+const areAllRequiredFormDataFieldsFilled = (parameters, args) => {
+	const requiredFormDataFields = filter(parameters, { in: 'formData', required: true });
+	return every(requiredFormDataFields, (field) => {
+		return !!args[field.name];
+	});
+}
+
 const computeType = (inputSchema, operationsDescriptions, swagger, idFormats, typesBag, parentTypePath = '') => {
 	// console.log('parentTypePath', parentTypePath, 'schema', g(schema, 'title'), schema);
 	const allOf = g(inputSchema, 'allOf');
@@ -64,6 +91,11 @@ const computeType = (inputSchema, operationsDescriptions, swagger, idFormats, ty
 		if (includes(idFormats, g(schema, 'format'))) {
 			return new GraphQLNonNull(GraphQLID);
 		}
+
+		if (g(schema, 'format') === 'binary') {
+			return FileInputType;
+		}
+
 		switch (valueType) {
 			case 'array':
 				const itemsSchema = g(schema, 'items');
@@ -169,13 +201,13 @@ const computeType = (inputSchema, operationsDescriptions, swagger, idFormats, ty
 																if (parameterType) {
 																	type = computeType({ type: parameterType }, operationsDescriptions, swagger, idFormats, typesBag, newParentTypePath);
 																}
-																if (paramIn === 'body' && paramSchema) {
+																if ((paramIn === 'body' || paramIn === 'formData') && paramSchema) {
 																	type = computeType({
 																		...paramSchema,
 																		['x-isInput']: true
 																	}, operationsDescriptions, swagger, idFormats, typesBag, newParentTypePath);
 																}
-																if (required || paramIn === 'path') {
+																if ((required || paramIn === 'path') && parameterType !== 'file') {
 																	type = new GraphQLNonNull(type);
 																}
 																return {
@@ -233,10 +265,65 @@ const computeType = (inputSchema, operationsDescriptions, swagger, idFormats, ty
 														);
 														const method = g(operationDescriptor, 'operationMethod', 'get');
 														let callArguments = [resourceUri, context.http];
-														const bodyParameter = find(parameters, { ['in']: 'body' });
-														if (bodyParameter) {
-															callArguments = [callArguments[0], args[bodyParameter.name], callArguments[1]];
+
+														// if endpoint consumes multipart/form-data and all required form-data
+														// fields are filled, build multipart/form-data request instead of
+														// classic application/json request
+														if (
+															includes(g(operationDescriptor, 'consumes'), 'multipart/form-data') &&
+															areAllRequiredFormDataFieldsFilled(parameters, args)
+														) {
+															const formData = new FormData();
+
+															each(filter(parameters, { in: 'formData' }), (field) => {
+																let fileProxy; // es6 wtf duplicate declaration
+																let file;
+																if (!!field.schema) {
+																	// stringify object types
+																	formData.append(field.name, JSON.stringify(args[field.name]));
+																} else if (field.type === 'file') {
+																	// append file type
+																	fileProxy = args[field.name];
+																	file = g(context, ['files', fileProxy.path]);
+
+																	if (file) {
+																		formData.append(field.name, file);
+																	}
+																} else if (field.type === 'array') {
+																	// append array of files
+																	each(args[field.name], (fileProxy) => {
+																		fileProxy = args[field.name];
+																		file = g(context, ['files', fileProxy.path]);
+
+																		if (file) {
+																			formData.append(`${field.name}[]`, file);
+																		}
+																	});
+																} else {
+																	// just append scalar types
+																	formData.append(field.name, args[field.name]);
+																}
+															});
+
+															callArguments = [
+																callArguments[0],
+																formData,
+																merge( // extend by headers needed by multipart/form-data request
+																	callArguments[1],
+																	{
+																		'Content-Type': 'multipart/form-data',
+																	}
+																)
+															];
+														} else {
+															// build classic application/json request
+															const bodyParameter = find(parameters, { ['in']: 'body' });
+															if (bodyParameter) {
+																callArguments = [callArguments[0], args[bodyParameter.name], callArguments[1]];
+															}
 														}
+
+
 														return axios[method](...callArguments).then(
 															(response) => response.data
 														).catch(

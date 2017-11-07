@@ -10,6 +10,8 @@ const findQueriesDescriptions = (paths) => {
 					pathMethods,
 					(acc, operation, method) => {
 						const operationId = g(operation, 'operationId');
+						const consumes = g(operation, 'consumes', []);
+						const produces = g(operation, 'produces', []);
 						const schema = g(
 							operation,
 							['responses', '200', 'schema'],
@@ -26,6 +28,8 @@ const findQueriesDescriptions = (paths) => {
 									schema: schema.title ? schema : { ...schema, title: operationId },
 									// schema,
 									parameters: g(operation, 'parameters', []).concat(g(pathMethods, 'parameters', [])),
+									consumes,
+									produces,
 								},
 							};
 						}

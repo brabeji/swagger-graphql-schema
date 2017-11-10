@@ -1,4 +1,17 @@
-import { get as g, reduce, mapValues, isArray, find, merge, first, endsWith, includes, filter, every, each } from 'lodash';
+import {
+	get as g,
+	reduce,
+	mapValues,
+	isArray,
+	find,
+	merge,
+	first,
+	endsWith,
+	includes,
+	filter,
+	every,
+	each
+} from 'lodash';
 import invariant from 'invariant';
 import traverse from 'traverse';
 import axios from 'axios';
@@ -60,7 +73,7 @@ const findChildSchemas = (schema, swagger) => {
 		function (schemaNode) {
 			// if (schemaNode === schema) doesn't work due to bug in ref parser
 			// for now assume its the same schema like this
-			if (schemaNode.title === schema.title) {
+			if (schemaNode && schemaNode.title === schema.title) {
 				if (this.parent.key === 'allOf') {
 					acc = [...acc, this.parent.parent.node];
 				}
@@ -81,8 +94,13 @@ const computeType = (inputSchema, operationsDescriptions, swagger, idFormats, ty
 	// console.log('parentTypePath', parentTypePath, 'schema', g(schema, 'title'), schema);
 	const allOf = g(inputSchema, 'allOf');
 	const schema = inputSchema;
-	const valueType = g(schema, 'type', 'object');
+	let valueType = g(schema, 'type', 'object');
 	const isInput = g(schema, 'x-isInput', false);
+
+	// filter out types with 2 values where one of them is "null"
+	if (isArray(valueType) && valueType.length === 2 && includes(valueType, 'null')) {
+		valueType = first(filter(valueType, (v) => v !== 'null'));
+	}
 
 	if (isArray(valueType)) {
 		throw new Error('not implemented yet');

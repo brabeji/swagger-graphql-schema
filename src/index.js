@@ -10,7 +10,8 @@ import {
 	includes,
 	filter,
 	every,
-	each
+	each,
+	size,
 } from 'lodash';
 import invariant from 'invariant';
 import traverse from 'traverse';
@@ -18,6 +19,7 @@ import axios from 'axios';
 import UriTemplate from 'uri-templates';
 import findQueriesDescriptions from './findQueriesDescriptions';
 import findMutationsDescriptions from './findMutationsDescriptions';
+import ApiError from './ApiError';
 
 import {
 	GraphQLSchema,
@@ -341,15 +343,26 @@ const computeType = (inputSchema, operationsDescriptions, swagger, idFormats, ty
 															}
 														}
 
+														return axios[method](...callArguments)
+															.then(
+																(response) => {
+																	return response.data;
+																}
+															)
+															.catch(
+																(error) => {
+																	if (process.env.NODE_ENV === 'development') {
+																		console.log(`Resolver error for GET "${resourceUri}"`);
+																	}
 
-														return axios[method](...callArguments).then(
-															(response) => response.data
-														).catch(
-															(error) => {
-																console.log(`Resolver error for GET "${resourceUri}"`);
-																throw error;
-															}
-														)
+																	throw new ApiError(
+																		{
+																			code: error.response.status,
+																			data: error.response.data,
+																		}
+																	)
+																}
+															)
 													}
 												} : {}
 											),
@@ -450,11 +463,13 @@ const swaggerToSchema = (swagger, idFormats = ['uniqueId', 'uuid']) => {
 		typesBag
 	);
 
-	const schema = new GraphQLSchema({
-		types: Object.values(typesBag),
-		query: QueryType,
-		mutation: MutationType,
-	});
+	const schema = new GraphQLSchema(
+		{
+			types: Object.values(typesBag),
+			...(size(queriesDescriptions) ? { query: QueryType } : {}),
+			...(size(mutationsDescriptions) ? { mutation: MutationType } : {}),
+		}
+	);
 
 	return schema;
 };

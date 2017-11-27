@@ -34,6 +34,7 @@ import {
 	GraphQLNonNull,
 	GraphQLUnionType,
 	GraphQLInterfaceType,
+	GraphQLEnumType,
 } from 'graphql';
 
 
@@ -96,6 +97,7 @@ const computeType = (inputSchema, operationsDescriptions, swagger, idFormats, ty
 	// console.log('parentTypePath', parentTypePath, 'schema', g(schema, 'title'), schema);
 	const allOf = g(inputSchema, 'allOf');
 	const schema = inputSchema;
+	const schemaTitle = g(schema, 'title');
 	let valueType = g(schema, 'type', 'object');
 	const isInput = g(schema, 'x-isInput', false);
 
@@ -103,6 +105,17 @@ const computeType = (inputSchema, operationsDescriptions, swagger, idFormats, ty
 	if (isArray(valueType) && valueType.length === 2 && includes(valueType, 'null')) {
 		valueType = first(filter(valueType, (v) => v !== 'null'));
 	}
+
+	// compute type name
+	let typeName = schemaTitle || parentTypePath;
+	const shouldAppendInputToTypeName = isInput && !endsWith(typeName, 'Input') && !!typesBag[typeName];
+	typeName = shouldAppendInputToTypeName ? `${typeName}Input` : typeName;
+
+	// return cached copy if exists
+	if (typesBag[typeName]) {
+		return typesBag[typeName];
+	}
+
 
 	if (isArray(valueType)) {
 		throw new Error('not implemented yet');
@@ -116,7 +129,7 @@ const computeType = (inputSchema, operationsDescriptions, swagger, idFormats, ty
 			return FileInputType;
 		}
 
-		switch (valueType) {
+		switch (valueType.toLowerCase()) {
 			case 'array':
 				const itemsSchema = g(schema, 'items');
 
@@ -127,14 +140,6 @@ const computeType = (inputSchema, operationsDescriptions, swagger, idFormats, ty
 				break;
 			case 'object':
 				checkObjectSchemaForUnsupportedFeatures(schema);
-				const schemaTitle = g(schema, 'title');
-				let typeName = schemaTitle || parentTypePath;
-				const shouldAppendInputToTypeName = isInput && !endsWith(typeName, 'Input') && !!typesBag[typeName];
-				typeName = shouldAppendInputToTypeName ? `${typeName}Input` : typeName;
-
-				if (typesBag[typeName]) {
-					return typesBag[typeName];
-				}
 
 				const links = g(schema, 'x-links', {});
 				let properties = g(schema, 'properties');
@@ -388,6 +393,23 @@ const computeType = (inputSchema, operationsDescriptions, swagger, idFormats, ty
 
 				return newType;
 				break;
+			case 'string':
+				const enumValues = g(schema, 'enum');
+				if (enumValues) {
+					const newType = new GraphQLEnumType(
+						{
+							name: typeName,
+							values: enumValues.reduce(
+								(acc, enumValue, i) => {
+									return ({ ...acc, [enumValue]: { value: enumValue } })
+								},
+								[],
+							),
+						}
+					);
+					typesBag[typeName] = newType;
+					return newType
+				}
 			default:
 				const scalarType = scalartypeMap[valueType];
 				if (scalarType) {

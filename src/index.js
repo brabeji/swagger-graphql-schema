@@ -351,7 +351,7 @@ const computeType = (inputSchema, operationsDescriptions, swagger, idFormats, ty
 														return axios[method](...callArguments)
 															.then(
 																(response) => {
-																	return response.data;
+																	return response.status === 204 ? undefined : response.data;
 																}
 															)
 															.catch(

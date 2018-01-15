@@ -1,68 +1,91 @@
 import {
-	get as g,
-	reduce,
 	mapValues,
-	isArray,
-	find,
-	merge,
-	first,
-	endsWith,
+	get as g,
 	includes,
+	isString,
+	isArray,
+	isObject,
 	filter,
-	every,
 	each,
-	size,
+	merge,
+	find,
+	first,
+	cloneDeep,
 } from 'lodash';
-import invariant from 'invariant';
-import traverse from 'traverse';
-import axios from 'axios';
-import UriTemplate from 'uri-templates';
-import findQueriesDescriptions from './findQueriesDescriptions';
-import findMutationsDescriptions from './findMutationsDescriptions';
-import ApiError from './ApiError';
-
+import { GraphQLSchema, getNullableType } from 'graphql';
 import {
-	GraphQLSchema,
 	GraphQLObjectType,
 	GraphQLInputObjectType,
+	GraphQLBoolean,
+	GraphQLInterfaceType,
 	GraphQLInt,
 	GraphQLFloat,
 	GraphQLString,
-	GraphQLBoolean,
-	GraphQLList,
-	GraphQLID,
 	GraphQLNonNull,
-	GraphQLUnionType,
-	GraphQLInterfaceType,
+	GraphQLID,
+	GraphQLList,
 	GraphQLEnumType,
+	GraphQLUnionType,
 } from 'graphql';
+import {
+	GraphQLDate,
+	GraphQLTime,
+	GraphQLDateTime,
+} from 'graphql-iso-date';
+import GraphQLJSON from 'graphql-type-json';
+// import {} from "graphql-tools-types" TODO constrained Int, Float, String...
+import { GraphQLEmailAddress } from 'graphql-scalars'
+import traverse from './traverse';
+import findQueriesDescriptions from './findQueriesDescriptions';
+import findMutationsDescriptions from './findMutationsDescriptions';
+import invariant from 'invariant';
+// import Ajv from 'ajv';
+// import ApiError from './ApiError';
 
+// const ajv = new Ajv({ allErrors: true });
 
-const FileInputType = new GraphQLInputObjectType({
-	name: 'FileInput',
-	fields: {
-		name: {
-			type: new GraphQLNonNull(GraphQLString),
-		},
-		type: {
-			type: new GraphQLNonNull(GraphQLString),
-		},
-		size: {
-			type: new GraphQLNonNull(GraphQLInt),
-		},
-		path: {
-			type: new GraphQLNonNull(GraphQLString),
-		},
-	},
-});
-
-const scalartypeMap = {
+const SCALAR_TYPE_MAP = {
 	integer: GraphQLInt,
 	number: GraphQLFloat,
 	string: GraphQLString,
 	boolean: GraphQLBoolean,
-	file: FileInputType,
+	json: GraphQLJSON,
 };
+const SCALAR_FORMAT_FACTORY_MAP = {
+	// date: () => GraphQLDate,
+	// time: () => GraphQLTime,
+	// 'date-time': () => GraphQLDateTime,
+	email: () => GraphQLEmailAddress,
+};
+
+const ID_FORMATS = ['uuid', 'uniqueId'];
+
+const TYPE_SCHEMA_SYMBOL_LABEL = 'swagger-graphql-schema type schema';
+
+const mergeAllOf = (schema) => {
+	const partialSchemas = schema.allOf || [schema];
+
+	const properties = partialSchemas.reduce(
+		(acc, partialSchema) => ({ ...acc, ...(partialSchema.properties || {}) }),
+		{},
+	);
+	const links = partialSchemas.reduce(
+		(acc, partialSchema) => ({ ...acc, ...(partialSchema['x-links'] || {}) }),
+		{},
+	);
+	const required = partialSchemas.reduce(
+		(acc, partialSchema) => ([...acc, ...(partialSchema.required || [])]),
+		[],
+	);
+	return {
+		// ...schema,
+		properties,
+		links,
+		required,
+	}
+};
+
+const makeTypeRequired = (type) => type === getNullableType(type) ? new GraphQLNonNull(type) : type;
 
 const checkObjectSchemaForUnsupportedFeatures = (schema) => {
 	if (g(schema, 'additionalProperties')) {
@@ -70,430 +93,448 @@ const checkObjectSchemaForUnsupportedFeatures = (schema) => {
 	}
 };
 
-const findChildSchemas = (schema, swagger) => {
-	let acc = [];
-	traverse(swagger).forEach(
-		function (schemaNode) {
-			// if (schemaNode === schema) doesn't work due to bug in ref parser
-			// for now assume its the same schema like this
-			if (schemaNode && schemaNode.title === schema.title) {
-				if (this.parent.key === 'allOf') {
-					acc = [...acc, this.parent.parent.node];
-				}
+const extractTypeName = (nodeContext) => {
+	// console.log('nodeContext.node', nodeContext.node.title);
+	const schema = nodeContext.node;
+	if (isString(schema.title)) {
+		return schema.title;
+	}
+	if (nodeContext.parent && nodeContext.parent.parent && nodeContext.parent.parent.node.type === 'object') {
+		return `${extractTypeName(nodeContext.parent)}_${nodeContext.key}`;
+	}
+	if (nodeContext.key === 'schema' && nodeContext.parent && nodeContext.parent.parent && nodeContext.parent.parent.parent) {
+		return `${nodeContext.parent.parent.parent.node.operationId}_${nodeContext.parent.key}`;
+	}
+	if (nodeContext.parent) {
+		return extractTypeName(nodeContext.parent);
+	}
+	return '';
+};
+
+const isIdSchema = (schema) => {
+	const valueFormat = g(schema, 'format');
+	return includes(ID_FORMATS, valueFormat);
+};
+const isEnum = (type) => {
+	return type.hasOwnProperty('_enumConfig');
+};
+
+const scalarTypeFromSchema = (schema, schemaName) => {
+	if (g(schema, 'enum') && g(schema, 'type') === 'string') {
+		return undefined;
+	}
+	const valueFormat = g(schema, 'format');
+	if (isIdSchema(schema)) {
+		return new GraphQLNonNull(GraphQLID);
+	}
+	let resultingType;
+	if (valueFormat) {
+		const factory = SCALAR_FORMAT_FACTORY_MAP[valueFormat];
+		if (factory) {
+			resultingType = factory(schema, schemaName);
+		}
+	}
+	if (!resultingType) {
+		let valueType = g(schema, 'type', 'object');
+		if (isArray(valueType) && valueType.length === 2 && includes(valueType, 'null')) {
+			valueType = first(filter(valueType, (v) => v !== 'null'));
+		}
+		if (valueType === 'object' && (!g(schema, 'properties') && !g(schema, 'allOf') && !g(schema, 'anyOf'))) {
+			valueType = 'json';
+		}
+		resultingType = SCALAR_TYPE_MAP[valueType];
+	}
+
+	return resultingType;
+};
+
+const parseEnums = ({ schema: rootSchema, types: typesCache }) => {
+	traverse(rootSchema).forEach(
+		function parseEnum(schema, context) {
+			// const isEnum = (schema.type === 'string' || schema.type === 'boolean') && isArray(schema.enum);
+			const isEnum = (schema.type === 'string') && isArray(schema.enum);
+			const isCached = schema.$$type;
+			if (isEnum && !isCached) {
+				const schemaId = Symbol(TYPE_SCHEMA_SYMBOL_LABEL);
+				schema.$$type = schemaId;
+				const enumValues = schema.enum;
+				typesCache[schemaId] = new GraphQLEnumType(
+					{
+						name: extractTypeName(context),
+						values: enumValues.reduce(
+							(acc, enumValue) => {
+								return ({ ...acc, [enumValue]: { value: enumValue } })
+							},
+							[],
+						),
+					}
+				);
+			}
+		}
+	);
+};
+
+const parseInterfaces = ({ schema: rootSchema, types: typesCache }) => {
+	traverse(rootSchema).forEach(
+		function parseInterface(schema, context) {
+			const isInterface = context.parent && context.parent.key === 'allOf' && schema.type === 'object' && isString(schema.title);
+			const isCached = schema.$$type;
+			if (isInterface && !isCached) {
+				checkObjectSchemaForUnsupportedFeatures(schema);
+				const schemaId = Symbol(TYPE_SCHEMA_SYMBOL_LABEL);
+				schema.$$type = schemaId;
+				const properties = schema.properties;
+				typesCache[schemaId] = new GraphQLInterfaceType(
+					{
+						name: extractTypeName(context),
+						fields: () => Object.keys(properties).reduce(
+							(acc, propertyName) => {
+								const propertySchema = properties[propertyName];
+								let type = scalarTypeFromSchema(propertySchema);
+								if (!type) {
+									type = typesCache[propertySchema.$$type];
+								}
+								const propertyDescriptor = {
+									type,
+								};
+								return { ...acc, [propertyName]: propertyDescriptor };
+							},
+							{},
+						),
+					}
+				);
 			}
 		},
 	);
-	return acc;
 };
 
-const areAllRequiredFormDataFieldsFilled = (parameters, args) => {
-	const requiredFormDataFields = filter(parameters, { in: 'formData', required: true });
-	return every(requiredFormDataFields, (field) => {
-		return !!args[field.name];
-	});
-}
-
-const computeType = (inputSchema, operationsDescriptions, swagger, idFormats, typesBag, parentTypePath = '') => {
-	// console.log('parentTypePath', parentTypePath, 'schema', g(schema, 'title'), schema);
-	const allOf = g(inputSchema, 'allOf');
-	const schema = inputSchema;
-	const schemaTitle = g(schema, 'title');
-	let valueType = g(schema, 'type', 'object');
-	const isInput = g(schema, 'x-isInput', false);
-
-	// filter out types with 2 values where one of them is "null"
-	if (isArray(valueType) && valueType.length === 2 && includes(valueType, 'null')) {
-		valueType = first(filter(valueType, (v) => v !== 'null'));
-	}
-
-	// compute type name
-	let typeName = schemaTitle || parentTypePath;
-	const shouldAppendInputToTypeName = isInput && !endsWith(typeName, 'Input') && !!typesBag[typeName];
-	typeName = shouldAppendInputToTypeName ? `${typeName}Input` : typeName;
-
-	// return cached copy if exists
-	if (typesBag[typeName]) {
-		return typesBag[typeName];
-	}
-
-
-	if (isArray(valueType)) {
-		throw new Error('not implemented yet');
-	} else {
-		const description = g(schema, 'description');
-		if (includes(idFormats, g(schema, 'format'))) {
-			return new GraphQLNonNull(GraphQLID);
-		}
-
-		if (g(schema, 'format') === 'binary') {
-			return FileInputType;
-		}
-
-		switch (valueType.toLowerCase()) {
-			case 'array':
-				const itemsSchema = g(schema, 'items');
-
-				return new GraphQLList(computeType({
-					...itemsSchema,
-					...(isInput ? { 'x-isInput': true } : {}),
-				}, operationsDescriptions, swagger, idFormats, typesBag, parentTypePath));
-				break;
-			case 'object':
+const parseObjectTypes = ({ schema: rootSchema, apiDefinition, operations, types: typesCache, createResolver }) => {
+	traverse(rootSchema).forEach(
+		function parseObjectType(schema, context) {
+			const isObjectWithProperties = schema.type === 'object' && !!schema.properties;
+			const isPlainType = (!context.parent || context.parent.key !== 'allOf') && (isObjectWithProperties || isArray(schema.allOf));
+			const isCached = schema.$$type;
+			if (isPlainType && !isCached) {
 				checkObjectSchemaForUnsupportedFeatures(schema);
-
-				const links = g(schema, 'x-links', {});
-				let properties = g(schema, 'properties');
-				// let hasInterfaces = false;
-				const discriminator = g(schema, 'discriminator');
-				const isInterface = !!discriminator;
-				let TypeConstructor = !isInterface ? GraphQLObjectType : GraphQLInterfaceType;
-				if (isInput) {
-					TypeConstructor = GraphQLInputObjectType;
-				}
-				let additionalConfig = {};
-				if (isInterface) {
-					const discriminatorPropertyName = g(discriminator, 'propertyName');
-					additionalConfig = {
-						resolveType: (value) => {
-							return g(typesBag, g(value, discriminatorPropertyName));
-						},
-					}
-				}
-
-				// find implemented interfaces
-				let getInterfaces = () => [];
-				if (allOf) {
-					properties = allOf.reduce((acc, partialSchema) => ({ ...acc, ...g(partialSchema, 'properties', {}) }), {});
-					getInterfaces = function () {
-						return allOf.reduce(
-							(acc, partialSchema) => {
-								const isInterface = !!g(partialSchema, 'discriminator');
-								if (!isInterface) {
-									return acc;
-								}
-								return [
-									...acc,
-									computeType(partialSchema, operationsDescriptions, swagger, idFormats, typesBag),
-								];
-							},
-							[],
-						);
-					}
-				}
-				const newType = new TypeConstructor(
+				const schemaId = Symbol(TYPE_SCHEMA_SYMBOL_LABEL);
+				schema.$$type = schemaId;
+				const { properties, links, required } = mergeAllOf(schema);
+				const name = extractTypeName(context);
+				typesCache[schemaId] = new GraphQLObjectType(
 					{
-						name: typeName,
-						description,
-						interfaces: getInterfaces,
-						...additionalConfig,
-						fields: () => {
-							return reduce(
-								properties,
-								(acc, propertySchema, propertyName) => {
-									const operationId = g(links, propertyName);
-									const operationDescriptor = g(operationsDescriptions, operationId);
-									const newParentTypePath = schemaTitle ? `${schemaTitle}_${propertyName}` : `${parentTypePath ? `${parentTypePath}_${propertyName}` : ''}`;
-									const isRootQuery = g(propertySchema, 'x-isRootOperation');
-									const isReadOnly = !isRootQuery && g(propertySchema, 'x-readOnly');
-									const parameters = g(operationDescriptor, 'parameters');
-
-									if (isReadOnly && isInput) {
-										return acc;
+						name,
+						interfaces: () => {
+							return (schema.allOf || []).reduce(
+								(acc, partialSchema) => {
+									const possibleInterface = typesCache[partialSchema.$$type];
+									if (possibleInterface && possibleInterface.hasOwnProperty('resolveType')) { // detect interface
+										// console.log('INTERFACE', Object.keys(possibleInterface));
+										return [...acc, possibleInterface];
 									}
-
-									return {
-										...acc,
-										[propertyName]: {
-											type: computeType({
-												...propertySchema,
-												...(isInput ? { 'x-isInput': true } : {}),
-											}, operationsDescriptions, swagger, idFormats, typesBag, newParentTypePath),
-											...(
-												operationDescriptor ? {
-													args: parameters.reduce(
-														(acc, parameter) => {
-															const {
-																name: paramName,
-																required,
-																['in']: paramIn,
-																type: parameterType,
-																['x-argPath']: argPath,
-																schema: paramSchema,
-															} = parameter;
-															if (isRootQuery || !argPath) {
-																// this is a root operation or resolution path is not defined => parameter is required
-																let type = GraphQLString;
-																if (parameterType) {
-																	type = computeType({ type: parameterType }, operationsDescriptions, swagger, idFormats, typesBag, newParentTypePath);
-																}
-																if ((paramIn === 'body' || paramIn === 'formData') && paramSchema) {
-																	type = computeType({
-																		...paramSchema,
-																		['x-isInput']: true
-																	}, operationsDescriptions, swagger, idFormats, typesBag, newParentTypePath);
-																}
-																if ((required || paramIn === 'path') && parameterType !== 'file') {
-																	type = new GraphQLNonNull(type);
-																}
-																return {
-																	...acc,
-																	[paramName]: { type },
-																}
-															}
-															return acc;
-														},
-														{}
-													),
-													resolve: (root, args, context, info) => {
-														// yay, make request!
-														const fieldValue = g(root, propertyName);
-														if (fieldValue) {
-															return fieldValue;
-														}
-														const scheme = first(g(swagger, 'schemes', ['http']));
-														const resourceUriTemplate = `${scheme}://${g(swagger, 'host')}${g(swagger, 'basePath')}${g(operationDescriptor, 'path')}`;
-														// TODO translate params
-														const argsValues = { root, ...args };
-														const parametersValues = parameters.reduce(
-															(acc, { name: paramName, ['x-argPath']: argPath, ['in']: paramIn }) => {
-																const value = g(argsValues, argPath || paramName);
-																if (value && paramIn === 'query') {
-																	return {
-																		...acc,
-																		queryParams: {
-																			...acc.queryParams,
-																			[paramName]: value
-																		}
-																	};
-																} else if (value && paramIn === 'path') {
-																	return {
-																		...acc,
-																		pathParams: {
-																			...acc.pathParams,
-																			[paramName]: value
-																		}
-																	};
-																}
-																return acc;
-															},
-															{
-																pathParams: {},
-																queryParams: {},
-															},
-														);
-														const template = new UriTemplate(`${resourceUriTemplate}{?queryParams*}`);
-														const resourceUri = template.fill(
-															{
-																...parametersValues.pathParams,
-																queryParams: parametersValues.queryParams,
-															}
-														);
-														const method = g(operationDescriptor, 'operationMethod', 'get');
-														let callArguments = [resourceUri, context.http];
-
-														// if endpoint consumes multipart/form-data and all required form-data
-														// fields are filled, build multipart/form-data request instead of
-														// classic application/json request
-														if (
-															includes(g(operationDescriptor, 'consumes'), 'multipart/form-data') &&
-															areAllRequiredFormDataFieldsFilled(parameters, args)
-														) {
-															const formData = new FormData();
-
-															each(filter(parameters, { in: 'formData' }), (field) => {
-																let fileProxy; // es6 wtf duplicate declaration
-																let file;
-																if (!!field.schema) {
-																	// stringify object types
-																	formData.append(field.name, JSON.stringify(args[field.name]));
-																} else if (field.type === 'file') {
-																	// append file type
-																	fileProxy = args[field.name];
-																	file = g(context, ['files', fileProxy.path]);
-
-																	if (file) {
-																		formData.append(field.name, file);
-																	}
-																} else if (field.type === 'array') {
-																	// append array of files
-																	each(args[field.name], (fileProxy) => {
-																		fileProxy = args[field.name];
-																		file = g(context, ['files', fileProxy.path]);
-
-																		if (file) {
-																			formData.append(`${field.name}[]`, file);
-																		}
-																	});
-																} else {
-																	// just append scalar types
-																	formData.append(field.name, args[field.name]);
-																}
-															});
-
-															callArguments = [
-																callArguments[0],
-																formData,
-																merge( // extend by headers needed by multipart/form-data request
-																	callArguments[1],
-																	{
-																		'Content-Type': 'multipart/form-data',
-																	}
-																)
-															];
-														} else {
-															// build classic application/json request
-															const bodyParameter = find(parameters, { ['in']: 'body' });
-															if (bodyParameter) {
-																callArguments = [callArguments[0], args[bodyParameter.name], callArguments[1]];
-															}
-														}
-
-														return axios[method](...callArguments)
-															.then(
-																(response) => {
-																	return response.data;
-																}
-															)
-															.catch(
-																(error) => {
-																	if (process.env.NODE_ENV === 'development') {
-																		console.log(`Resolver error for GET "${resourceUri}"`);
-																	}
-
-																	throw new ApiError(
-																		{
-																			code: error.response.status,
-																			data: error.response.data,
-																		}
-																	)
-																}
-															)
-													}
-												} : {}
-											),
-										}
-									}
-								}, {}
+									return acc;
+								},
+								[],
 							);
+						},
+						isTypeOf: (value) => {
+							if (isObject(value) && value.typeName) {
+								return value.typeName === name;
+							}
+							return true;
+						},
+						fields: () => Object.keys(properties).reduce(
+							(acc, propertyName) => {
+								const propertySchema = properties[propertyName];
+								let type = scalarTypeFromSchema(propertySchema);
+								if (!type) {
+									type = typesCache[propertySchema.$$type];
+								}
+								if (includes(required, propertyName)) {
+									try {
+										type = makeTypeRequired(type);
+									} catch (error) {
+										console.log(type, propertyName, propertySchema);
+									}
+								}
+								const operation = g(operations, g(links, propertyName));
+								let resolve;
+								let args;
+								if (operation) {
+									const schemaResolve = createResolver(
+										{ apiDefinition, propertyName, operation }
+									);
+									resolve = (root, args, context, info) => {
+										let resolvedValue = g(root, propertyName);
+										if (!resolvedValue) {
+											resolvedValue = schemaResolve(root, args, context, info);
+										}
+
+										// TODO json schema validation
+										// if (operation.schema) {
+										// 	const valid = ajv.validate(operation.schema, resolvedValue);
+										// 	if (!valid) {
+										// 		throw new ApiError(
+										// 			{
+										// 				code: 5000,
+										// 				data: {
+										// 					validatedInstance: resolvedValue,
+										// 					validationErrors: ajv.errors,
+										// 				},
+										// 			}
+										// 		)
+										// 	}
+										// }
+
+										return resolvedValue;
+									};
+									args = operation.parameters.reduce(
+										(acc, parameter) => {
+											const {
+												name: paramName,
+												required,
+												['in']: paramIn,
+												type: parameterType,
+												format: parameterFormat,
+												['x-argPath']: argPath,
+												schema: paramSchema,
+											} = parameter;
+											if (!argPath) {
+												// this is a root operation or resolution path is not defined => parameter is required
+												let type;
+												if (parameterType) {
+													type = scalarTypeFromSchema(
+														{ type: parameterType, format: parameterFormat }
+													);
+												}
+												if ((paramIn === 'body' || paramIn === 'formData') && paramSchema) {
+													type = typesCache[paramSchema.$$inputType];
+												}
+												if (!type) {
+													type = GraphQLString;
+												}
+												if ((required || paramIn === 'path') && parameterType !== 'file') {
+													type = makeTypeRequired(type);
+												}
+												return {
+													...acc,
+													[paramName]: { type },
+												}
+											}
+											return acc;
+										},
+										{}
+									)
+								}
+								const propertyDescriptor = {
+									type,
+									args,
+									resolve,
+								};
+								return { ...acc, [propertyName]: propertyDescriptor };
+							},
+							{},
+						),
+					}
+				);
+			}
+		},
+	);
+};
+
+const constructInputType = ({ schema, typeName: inputTypeName, typesCache, isNestedUnderEntity = false }) => {
+	checkObjectSchemaForUnsupportedFeatures(schema);
+	const inputSchemaId = Symbol(TYPE_SCHEMA_SYMBOL_LABEL);
+	schema.$$inputType = inputSchemaId;
+
+	let inputType = scalarTypeFromSchema(schema);
+	if (schema.$$type && isEnum(typesCache[schema.$$type])) {
+		return typesCache[schema.$$type];
+	}
+	if (schema.type === 'array') {
+		return new GraphQLList(
+			constructInputType(
+				{
+					schema: schema.items,
+					typesCache,
+					isNestedUnderEntity: isNestedUnderEntity,
+					typeName: inputTypeName,
+				},
+			)
+		);
+	}
+	if (!inputType) {
+		const { properties, required } = mergeAllOf(schema);
+
+		const hasID = Object.keys(properties).reduce((acc, pn) => acc || isIdSchema(properties[pn]), false);
+		// const requireOnlyIdInput = hasID && isNestedUnderEntity;
+		let typeName = `${inputTypeName}Input`;
+		inputType = new GraphQLInputObjectType(
+			{
+				name: typeName,
+				fields: () => Object
+					.keys(properties)
+					// .filter((k) => requireOnlyIdInput ? isIdSchema(properties[k]) : !properties[k].readOnly)
+					.filter((k) => !properties[k].readOnly)
+					.reduce(
+						(acc, propertyName) => {
+							const propertySchema = properties[propertyName];
+							let type = constructInputType(
+								{
+									schema: propertySchema,
+									typesCache,
+									isNestedUnderEntity: isNestedUnderEntity || hasID,
+									typeName: `${inputTypeName}_${propertyName}`,
+								},
+							);
+							// TODO all input fields are optional for now
+							// if (includes(required, propertyName)) {
+							// 	type = makeTypeRequired(type);
+							// }
+							const propertyDescriptor = {
+								type,
+							};
+							return { ...acc, [propertyName]: propertyDescriptor };
+						},
+						{},
+					),
+			},
+		);
+		typesCache[inputSchemaId] = inputType;
+	}
+	return inputType;
+};
+const parseRootInputTypes = ({ schema: rootSchema, types: typesCache }) => {
+	traverse(rootSchema).forEach(
+		function parseRootInputType(schema, context) {
+			const isRootInputType = context.key === 'schema' && context.parent.node.in === 'body' && context.parent.node.name;
+			const isCachedRootInputType = schema.$$rootInputType;
+			if (isRootInputType && !isCachedRootInputType) {
+				schema.$$rootInputType = Symbol(TYPE_SCHEMA_SYMBOL_LABEL);
+				constructInputType({
+					schema,
+					typesCache,
+					typeName: schema.title || `Mutation_${context.parent.parent.parent.node.operationId}`
+				});
+			}
+		},
+	);
+};
+
+const parseUnions = ({ schema: rootSchema, types: typesCache }) => {
+	traverse(rootSchema).forEach(
+		function parseUnion(schema, context) {
+			const isUnion = schema && isArray(schema.anyOf);
+			const isCached = schema && schema.$$type;
+			if (isUnion && !isCached) {
+				const schemaId = Symbol(TYPE_SCHEMA_SYMBOL_LABEL);
+				schema.$$type = schemaId;
+				typesCache[schemaId] = new GraphQLUnionType(
+					{
+						name: extractTypeName(context),
+						types: () => {
+							return schema.anyOf.map(
+								(subSchema) => {
+									return typesCache[subSchema.$$type];
+								}
+							)
+						},
+						resolveType: (value) => {
+							if (value.typeName) {
+								return value.typeName;
+							}
 						},
 					}
 				);
-				typesBag[typeName] = newType;
-
-				if (isInterface) {
-					const childSchemas = findChildSchemas(schema, swagger);
-					const childTypes = childSchemas.reduce(
-						(acc, childSchema) => ({
-							...acc,
-							[g(childSchema, 'title')]: computeType(childSchema, operationsDescriptions, swagger, idFormats, typesBag)
-						}),
-						{}
-					);
-				}
-
-				return newType;
-				break;
-			case 'string':
-				const enumValues = g(schema, 'enum');
-				if (enumValues) {
-					const newType = new GraphQLEnumType(
-						{
-							name: typeName,
-							values: enumValues.reduce(
-								(acc, enumValue, i) => {
-									return ({ ...acc, [enumValue]: { value: enumValue } })
-								},
-								[],
-							),
-						}
-					);
-					typesBag[typeName] = newType;
-					return newType
-				}
-			default:
-				const scalarType = scalartypeMap[valueType];
-				if (scalarType) {
-					return scalarType;
-				}
-				throw new Error(`Could not find type mapping for "${valueType}"`);
-		}
-	}
-};
-
-const gatherObjectTypes = (schema, queriesDescriptions, swagger, idFormats, typesBag) => {
-	traverse(schema).forEach(
-		(node) => {
-			const title = g(node, 'title');
-			const hasTitle = !!title;
-			const hasProperties = g(node, 'properties');
-			const hasAllOf = g(node, 'allOf');
-			const isObjectType = hasTitle && (hasProperties || hasAllOf);
-			if (isObjectType) {
-				typesBag[title] = computeType(node, queriesDescriptions, swagger, idFormats, typesBag);
 			}
 		},
-	)
+	);
 };
 
-const swaggerToSchema = (swagger, idFormats = ['uniqueId', 'uuid']) => {
-	const queriesDescriptions = findQueriesDescriptions(swagger.paths);
-	const mutationsDescriptions = findMutationsDescriptions(swagger.paths);
+const parseLists = ({ schema: rootSchema, types: typesCache }) => {
+	traverse(rootSchema).forEach(
+		function parseList(schema) {
+			const isList = schema && schema.type === 'array' && schema.items;
+			const isCached = schema && schema.$$type;
+			if (isList && !isCached) {
+				const schemaId = Symbol(TYPE_SCHEMA_SYMBOL_LABEL);
+				schema.$$type = schemaId;
+				let innerType = scalarTypeFromSchema(schema.items);
+				if (!innerType) {
+					innerType = typesCache[schema.items.$$type];
+				}
+				if (!innerType) {
+					throw new Error(`No graphql type found for schema\n\n${JSON.stringify(schema.items, null, 2)}`);
+				}
+				typesCache[schemaId] = new GraphQLList(innerType);
+			}
+		},
+	);
+};
 
-	const typesBag = {};
+const swaggerToSchema = ({ swagger: { paths }, swagger, createResolver } = {}) => {
+	const queriesDescriptions = findQueriesDescriptions(paths);
+	const mutationsDescriptions = findMutationsDescriptions(paths);
+	const operations = { ...queriesDescriptions, ...mutationsDescriptions };
 
-	const querySchema = {
-		title: 'Query',
-		type: 'object',
-		description: 'query root type',
-		properties: mapValues(
-			queriesDescriptions,
-			({ schema }) => ({ ...schema, 'x-isRootOperation': true }),
-		),
-		'x-links': mapValues(
-			queriesDescriptions,
-			(_, linkName) => linkName,
-		)
+	const completeSchema = {
+		...swagger,
+		definitions: {
+			...(swagger.definitions || {}),
+			Query: {
+				title: 'Query',
+				type: 'object',
+				description: 'query root type',
+				properties: mapValues(
+					queriesDescriptions,
+					({ schema }) => schema,
+				),
+				'x-links': mapValues(
+					queriesDescriptions,
+					(_, linkName) => linkName,
+				),
+			},
+			Mutation: {
+				title: 'Mutation',
+				type: 'object',
+				description: 'mutation root type',
+				properties: mapValues(
+					mutationsDescriptions,
+					({ schema }) => schema,
+				),
+				'x-links': mapValues(
+					mutationsDescriptions,
+					(_, linkName) => linkName,
+				),
+			},
+		},
 	};
-	gatherObjectTypes(querySchema, queriesDescriptions, swagger, idFormats, typesBag);
-	const QueryType = computeType(
-		querySchema,
-		queriesDescriptions,
-		swagger,
-		idFormats,
-		typesBag
+
+	const types = {};
+
+	[
+		completeSchema.definitions.Query,
+		completeSchema.definitions.Mutation,
+		completeSchema,
+	].forEach(
+		(schema) => {
+			parseEnums({ schema, types });
+			parseInterfaces({ schema, types });
+			parseObjectTypes({ schema, operations, apiDefinition: completeSchema, types, createResolver });
+			parseUnions({ schema, types });
+			parseLists({ schema, types });
+			parseRootInputTypes({ schema, types });
+		},
 	);
 
-	const mutationSchema = {
-		title: 'Mutation',
-		type: 'object',
-		description: 'mutation root type',
-		properties: mapValues(
-			mutationsDescriptions,
-			({ schema }) => ({ ...schema, 'x-isRootOperation': true }),
-		),
-		'x-links': mapValues(
-			mutationsDescriptions,
-			(_, linkName) => linkName,
-		)
-	};
-	gatherObjectTypes(mutationSchema, mutationsDescriptions, swagger, idFormats, typesBag);
-	const MutationType = computeType(
-		mutationSchema,
-		mutationsDescriptions,
-		swagger,
-		idFormats,
-		typesBag
-	);
+	const typesList = Object.getOwnPropertySymbols(types).map(s => types[s]);
 
-	const schema = new GraphQLSchema(
+	return new GraphQLSchema(
 		{
-			types: Object.values(typesBag),
-			...(size(queriesDescriptions) ? { query: QueryType } : {}),
-			...(size(mutationsDescriptions) ? { mutation: MutationType } : {}),
+			types: typesList,
+			query: types[completeSchema.definitions.Query.$$type],
+			mutation: types[completeSchema.definitions.Mutation.$$type],
 		}
 	);
-
-	return schema;
 };
 
 export default swaggerToSchema;

@@ -18,7 +18,7 @@ const findQueriesDescriptions = (paths) => {
 							g(
 								operation,
 								['responses', '201', 'schema'],
-							)
+							),
 						);
 						if (operationId && schema && method.toLowerCase() === 'get') {
 							return {

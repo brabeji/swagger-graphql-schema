@@ -62,6 +62,7 @@ const SCALAR_FORMAT_FACTORY_MAP = {
 const ID_FORMATS = ['uuid', 'uniqueId'];
 
 const TYPE_SCHEMA_SYMBOL_LABEL = 'swagger-graphql-schema type schema';
+const IS_IN_INPUT_TYPE_CHAIN_SYMBOL = Symbol('swagger-graphql-schema input type chain');
 
 const mergeAllOf = (schema) => {
 	const partialSchemas = schema.allOf || [schema];
@@ -367,6 +368,7 @@ const constructInputType = ({ schema, typeName: inputTypeName, typesCache, isNes
 		);
 	}
 	if (!inputType) {
+		schema[IS_IN_INPUT_TYPE_CHAIN_SYMBOL] = true;
 		const { properties, required } = mergeAllOf(schema);
 
 		const hasID = Object.keys(properties).reduce((acc, pn) => acc || isIdSchema(properties[pn]), false);
@@ -375,10 +377,10 @@ const constructInputType = ({ schema, typeName: inputTypeName, typesCache, isNes
 		inputType = new GraphQLInputObjectType(
 			{
 				name: typeName,
-				fields: () => Object
+				fields: Object
 					.keys(properties)
 					// .filter((k) => requireOnlyIdInput ? isIdSchema(properties[k]) : !properties[k].readOnly)
-					.filter((k) => !properties[k].readOnly)
+					.filter((k) => !properties[k].readOnly && !properties[k][IS_IN_INPUT_TYPE_CHAIN_SYMBOL])
 					.reduce(
 						(acc, propertyName) => {
 							const propertySchema = properties[propertyName];
@@ -403,6 +405,7 @@ const constructInputType = ({ schema, typeName: inputTypeName, typesCache, isNes
 					),
 			},
 		);
+		schema[IS_IN_INPUT_TYPE_CHAIN_SYMBOL] = false;
 		typesCache[inputSchemaId] = inputType;
 	}
 	return inputType;

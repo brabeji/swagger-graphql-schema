@@ -12,8 +12,9 @@ import {
 	first,
 	cloneDeep,
 } from 'lodash';
-import { GraphQLSchema, getNullableType } from 'graphql';
 import {
+	GraphQLSchema,
+	getNullableType,
 	GraphQLObjectType,
 	GraphQLInputObjectType,
 	GraphQLBoolean,
@@ -347,6 +348,9 @@ const constructInputType = ({ schema, typeName: inputTypeName, typesCache, isNes
 	schema.$$inputType = inputSchemaId;
 
 	let inputType = scalarTypeFromSchema(schema);
+	if (isIdSchema(schema)) {
+		inputType = getNullableType(inputType);
+	}
 	if (schema.$$type && isEnum(typesCache[schema.$$type])) {
 		return typesCache[schema.$$type];
 	}

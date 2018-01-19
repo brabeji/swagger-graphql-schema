@@ -210,7 +210,7 @@ const parseInterfaces = ({ schema: rootSchema, types: typesCache }) => {
 	);
 };
 
-const parseObjectTypes = ({ schema: rootSchema, apiDefinition, operations, types: typesCache, createResolver }) => {
+const parseObjectTypes = ({ schema: rootSchema, apiDefinition, operations, types: typesCache, createResolver, discriminatorFieldName }) => {
 	traverse(rootSchema).forEach(
 		function parseObjectType(schema, context) {
 			const isObjectWithProperties = schema.type === 'object' && !!schema.properties;
@@ -239,12 +239,12 @@ const parseObjectTypes = ({ schema: rootSchema, apiDefinition, operations, types
 							);
 						},
 						isTypeOf: (value) => {
-							if (isObject(value) && value.typeName) {
-								return value.typeName === name;
+							if (isObject(value) && value[discriminatorFieldName]) {
+								return value[discriminatorFieldName] === name;
 							}
 							return true;
 						},
-						fields: () => Object.keys(properties).reduce(
+						fields: () => Object.keys(properties).filter(propertyName => propertyName !== discriminatorFieldName).reduce(
 							(acc, propertyName) => {
 								const propertySchema = properties[propertyName];
 								let type = scalarTypeFromSchema(propertySchema);
@@ -425,7 +425,7 @@ const parseRootInputTypes = ({ schema: rootSchema, types: typesCache }) => {
 	);
 };
 
-const parseUnions = ({ schema: rootSchema, types: typesCache }) => {
+const parseUnions = ({ schema: rootSchema, types: typesCache, discriminatorFieldName }) => {
 	traverse(rootSchema).forEach(
 		function parseUnion(schema, context) {
 			const isUnion = schema && isArray(schema.anyOf);
@@ -444,8 +444,8 @@ const parseUnions = ({ schema: rootSchema, types: typesCache }) => {
 							)
 						},
 						resolveType: (value) => {
-							if (value.typeName) {
-								return value.typeName;
+							if (value[discriminatorFieldName]) {
+								return value[discriminatorFieldName];
 							}
 						},
 					}
@@ -476,7 +476,7 @@ const parseLists = ({ schema: rootSchema, types: typesCache }) => {
 	);
 };
 
-const swaggerToSchema = ({ swagger: { paths }, swagger, createResolver } = {}) => {
+const swaggerToSchema = ({ swagger: { paths }, swagger, createResolver, discriminatorFieldName = 'typeName' } = {}) => {
 	const queriesDescriptions = findQueriesDescriptions(paths);
 	const mutationsDescriptions = findMutationsDescriptions(paths);
 	const operations = { ...queriesDescriptions, ...mutationsDescriptions };
@@ -524,8 +524,17 @@ const swaggerToSchema = ({ swagger: { paths }, swagger, createResolver } = {}) =
 		(schema) => {
 			parseEnums({ schema, types });
 			parseInterfaces({ schema, types });
-			parseObjectTypes({ schema, operations, apiDefinition: completeSchema, types, createResolver });
-			parseUnions({ schema, types });
+			parseObjectTypes(
+				{
+					schema,
+					operations,
+					apiDefinition: completeSchema,
+					types,
+					createResolver,
+					discriminatorFieldName
+				}
+			);
+			parseUnions({ schema, types, discriminatorFieldName });
 			parseLists({ schema, types });
 			parseRootInputTypes({ schema, types });
 		},

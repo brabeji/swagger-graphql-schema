@@ -6,8 +6,8 @@
   "scripts": {
     "build": "node ./node_modules/babel-cli/bin/babel src/ --out-dir lib --copy-files",
     "build:watch": "yarn run build --watch",
-    "test": "tape -r babel-register ./src/test/**/*.js",
-    "test:watch": "tape-watch -r babel-register ./src/test/**/*.js"
+    "test": "tape -r babel-register ./test/**/*.js",
+    "test:watch": "tape-watch -r babel-register ./test/**/*.js"
   },
   "devDependencies": {
     "@std/esm": "^0.19.2",
@@ -32,6 +32,7 @@
     "graphql-tag": "^2.6.1",
     "graphql-tools-types": "^1.1.13",
     "graphql-type-json": "^0.1.4",
+    "graphql-union-input-type": "^0.3.1",
     "invariant": "^2.2.2",
     "lodash": "^4.17.4",
     "seedrandom": "^2.4.3",

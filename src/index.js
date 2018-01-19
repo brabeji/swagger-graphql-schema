@@ -34,6 +34,7 @@ import {
 	GraphQLDateTime,
 } from 'graphql-iso-date';
 import GraphQLJSON from 'graphql-type-json';
+import GraphQLUnionInputType from 'graphql-union-input-type';
 // import {} from "graphql-tools-types" TODO constrained Int, Float, String...
 import { GraphQLEmailAddress } from 'graphql-scalars'
 import traverse from './traverse';
@@ -343,7 +344,7 @@ const parseObjectTypes = ({ schema: rootSchema, apiDefinition, operations, types
 	);
 };
 
-const constructInputType = ({ schema, typeName: inputTypeName, typesCache, isNestedUnderEntity = false }) => {
+const constructInputType = ({ schema, typeName: inputTypeName, typesCache, isNestedUnderEntity = false, discriminatorFieldName }) => {
 	checkObjectSchemaForUnsupportedFeatures(schema);
 
 	let inputType = scalarTypeFromSchema(schema);
@@ -365,13 +366,48 @@ const constructInputType = ({ schema, typeName: inputTypeName, typesCache, isNes
 			)
 		);
 	}
+	let typeName = `${inputTypeName}Input`;
+
+	if (isArray(schema.anyOf)) {
+		inputType = new GraphQLUnionInputType(
+			{
+				name: typeName,
+				types: schema.anyOf.map(
+					(unionPartSchema) => constructInputType(
+						{
+							schema: unionPartSchema,
+							typesCache,
+							isNestedUnderEntity: isNestedUnderEntity,
+							typeName: inputTypeName,
+						},
+					)
+				),
+				typeKey: discriminatorFieldName,
+			}
+		)
+	}
+
 	if (!inputType) {
 		schema[IS_IN_INPUT_TYPE_CHAIN_SYMBOL] = true;
 		const { properties, required } = mergeAllOf(schema);
 
 		const hasID = Object.keys(properties).reduce((acc, pn) => acc || isIdSchema(properties[pn]), false);
 		// const requireOnlyIdInput = hasID && isNestedUnderEntity;
-		let typeName = `${inputTypeName}Input`;
+
+		const a = Object
+			.keys(properties)
+			.filter((k) => !properties[k].readOnly && !properties[k][IS_IN_INPUT_TYPE_CHAIN_SYMBOL]);
+		if (!Object.keys(a).length) {
+			console.log('>>>>>>>');
+			console.log('>>>>>>>');
+			console.log('>>>>>>>');
+			console.log(properties);
+			console.log(schema);
+			console.log('');
+			console.log('');
+			console.log('');
+		}
+
 		inputType = new GraphQLInputObjectType(
 			{
 				name: typeName,
@@ -407,7 +443,7 @@ const constructInputType = ({ schema, typeName: inputTypeName, typesCache, isNes
 	}
 	return inputType;
 };
-const parseRootInputTypes = ({ schema: rootSchema, types: typesCache }) => {
+const parseRootInputTypes = ({ schema: rootSchema, types: typesCache, discriminatorFieldName }) => {
 	traverse(rootSchema).forEach(
 		function parseRootInputType(schema, context) {
 			const isRootInputType = context.key === 'schema' && context.parent.node.in === 'body' && context.parent.node.name;
@@ -419,6 +455,7 @@ const parseRootInputTypes = ({ schema: rootSchema, types: typesCache }) => {
 					schema,
 					typesCache,
 					typeName,
+					discriminatorFieldName,
 				});
 			}
 		},
@@ -536,7 +573,7 @@ const swaggerToSchema = ({ swagger: { paths }, swagger, createResolver, discrimi
 			);
 			parseUnions({ schema, types, discriminatorFieldName });
 			parseLists({ schema, types });
-			parseRootInputTypes({ schema, types });
+			parseRootInputTypes({ schema, types, discriminatorFieldName });
 		},
 	);
 

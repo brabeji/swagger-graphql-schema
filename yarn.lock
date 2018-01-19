@@ -2983,6 +2983,10 @@ graphql-type-json@^0.1.4:
   version "0.1.4"
   resolved "https://registry.yarnpkg.com/graphql-type-json/-/graphql-type-json-0.1.4.tgz#89f13f5d32ce08c9a76c79fdf9c1968384d81a4e"
 
+graphql-union-input-type@^0.3.1:
+  version "0.3.1"
+  resolved "https://registry.yarnpkg.com/graphql-union-input-type/-/graphql-union-input-type-0.3.1.tgz#e2b065bca7e4a9a65d0a14b5e54edadc7bce277a"
+
 graphql@^0.12.3:
   version "0.12.3"
   resolved "https://registry.yarnpkg.com/graphql/-/graphql-0.12.3.tgz#11668458bbe28261c0dcb6e265f515ba79f6ce07"

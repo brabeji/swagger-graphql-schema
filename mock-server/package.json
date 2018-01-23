@@ -5,6 +5,7 @@
 	"license": "MIT",
 	"scripts": {
 		"start": "node -r @std/esm --harmony ./index.js",
+		"inspect": "node --inspect-brk -r @std/esm --harmony ./index.js",
 		"run": "node ./index.js",
 		"watch": "nodemon -r @std/esm --harmony ./index.js"
 	},

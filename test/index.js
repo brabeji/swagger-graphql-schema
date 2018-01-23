@@ -13,9 +13,9 @@ import traverse2 from '../src/traverse';
 
 let gqlSchema;
 
-test('it produces graphql schema', (t) => {
+test.only('it produces graphql schema', (t) => {
 	t.plan(1);
-	return RefParser.dereference(path.resolve(__dirname, './fixtures/api.yml'))
+	return RefParser.dereference(path.resolve(__dirname, './fixtures/swagger.json'))
 	.then(
 		(swagger) => {
 			try {
@@ -26,49 +26,114 @@ test('it produces graphql schema', (t) => {
 			}
 
 			t.assert(gqlSchema instanceof GraphQLSchema, 'Result is GraphQLSchema');
-			t.end();
+
+			// console.log(gqlSchema);
+
+			// t.end();
 
 			return execute(
 				gqlSchema,
+				// gql`
+				//  query TagSearchResults($q: String) {
+				//    tagSearchResults(q: $q) {
+				//      tags {
+				//        name
+				//      }
+				//    }
+				//    search(q: $q) {
+				//      ... on Post {
+				//        title
+				//        tags {
+				//          name
+				//        }
+				//        foo
+				//      }
+				//      ... on Tag {
+				//        name
+				//      }
+				//      ... on Category {
+				//        title
+				//        tags {
+				//          name
+				//        }
+				//      }
+				//    }
+				//  }
+				// `,
+				// gql`
+				//  query A {
+				//    #					  __schema {
+				//    #					    types {
+				//    #					      name
+				//    #					      ofType {
+				//    #					        name
+				//    #					      }
+				//    #					    }
+				//    #					  }
+				//    __type(name: "BikeInput") {
+				//      name
+				//      kind
+				//    }
+				//    mutationType: __type(name: "Mutation") {
+				//      fields {
+				//        name
+				//        #					      type {name ofType {name}}
+				//        args {name type {name ofType {name}}}
+				//      }
+				//    }
+				//  }
+				// `,
+				// gql`
+				//  mutation A($input: CreateCarListingPayloadInput!) {
+				//    createCarListing(input: $input) {
+				//      product {
+				//        id
+				//      }
+				//    }
+				//  }
+				// `,
 				gql`
-                  query TagSearchResults($q: String) {
-                    tagSearchResults(q: $q) {
-                      tags {
-                        name
-                      }
+                  query A {
+                    a:__type(name: "ItemStatus") {
+                      name
+                      kind
                     }
-                    search(q: $q) {
-                      ... on Post {
-                        title
-                        tags {
-                          name
-                        }
-                        foo
-                      }
-                      ... on Tag {
-                        name
-                      }
-                      ... on Category {
-                        title
-                        tags {
-                          name
-                        }
-                      }
+                    b:__type(name: "RealEstate") {
+                      name
+                      kind
                     }
                   }
 				`,
+				// gql`
+				//  query A {
+				//    posts {
+				//      id
+				//      title
+				//      __typename
+				//    }
+				//    search {
+				//      id
+				//      ... on Post {
+				//        title
+				//        typeName
+				//      }
+				//      __typename
+				//    }
+				//  }
+				// `,
 				{},
 				{},
 				{
-					input: {
-						title: 'AAA',
-						code: 'AAA',
-						features: [
-							{
-								description: 'dnsbhj',
-							},
-						],
-					},
+					input: { product: { id: "fsbadhj", description: "fbdshag" } },
+					// input: {
+					// 	title: 'AAA',
+					// 	code: 'AAA',
+					// 	features: [
+					// 		{
+					// 			description: 'dnsbhj',
+					// 		},
+					// 	],
+					// },
 				},
 			);
 
@@ -78,8 +143,10 @@ test('it produces graphql schema', (t) => {
 		(result) => {
 
 			console.log(JSON.stringify(result, null, 2));
+			// console.log(JSON.stringify(result.data.mutationType.fields.filter(({ name }) => name === 'createCar'), null, 2));
+			// console.log(JSON.stringify(result.data.__schema.types.length, null, 2));
 			// console.log(JSON.stringify(result.data.__schema.types.filter(({ name, kind }) => !startsWith(name, '__') && kind === 'INPUT_OBJECT'), null, 2));
-			// t.end();
+			t.end();
 		},
 	)
 	.catch(
@@ -127,7 +194,7 @@ test('it conforms to older version', (t) => {
 test('it traverses', (t) => {
 	let count;
 	let limit = 3;
-	return RefParser.dereference(path.resolve(__dirname, './fixtures/cd.json'))
+	return RefParser.dereference(path.resolve(__dirname, './fixtures/api.yml'))
 		.then(
 			(sw) => {
 				const IMPLS = [traverse, traverse2];
@@ -157,4 +224,27 @@ test('it traverses', (t) => {
 			}
 		);
 
+});
+
+test('it traverses and handles circular references', (t) => {
+	// t.plan(1);
+	return RefParser
+		.dereference(path.resolve(__dirname, './fixtures/api.yml'))
+		.then(
+			(swagger) => {
+				try {
+					gqlSchema = swaggerToSchema({ swagger, createResolver: createFakerResolver });
+				} catch (error) {
+					t.error(error, 'swaggerToSchema thrown');
+					return;
+				}
+
+				t.assert(gqlSchema instanceof GraphQLSchema, 'Result is GraphQLSchema');
+				t.end();
+			}
+		).catch(
+			(error) => {
+				console.log('ERR', error);
+			}
+		);
 });

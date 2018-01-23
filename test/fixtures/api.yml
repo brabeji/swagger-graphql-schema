@@ -38,6 +38,39 @@ paths:
           description: success
           schema:
             $ref: '#/definitions/Post'
+    put:
+      operationId: updatePostWithAdditionalData
+      parameters:
+        - name: input
+          in: body
+          schema:
+            title: UpdatePostWithAdditionalDataPayload
+            type: object
+            properties:
+              post:
+                $ref: '#/definitions/Post'
+              ad:
+                title: PostAdditionalData
+                type: object
+                properties:
+                  foo:
+                    type: array
+                    items:
+                      title: PostAdditionalDataItem
+                      type: object
+                      properties:
+                        bar:
+                          type: string
+                      required:
+                        - bar
+            required:
+              - post
+              - ad
+      responses:
+        200:
+          description: success
+          schema:
+            $ref: '#/definitions/Post'
   /posts/{postId}/tags:
     get:
       operationId: postTags
@@ -166,6 +199,8 @@ definitions:
             $ref: '#/definitions/PostStatus'
           description:
             $ref: '#/definitions/PostDescription'
+          category:
+            $ref: '#/definitions/Category'
         required:
           - typeName
           - title
@@ -216,6 +251,13 @@ definitions:
               - Category
           title:
             type: string
+#          posts:
+#            type: array
+#            items:
+#              $ref: '#/definitions/Post'
+#          post:
+#            $ref: '#/definitions/Post'
         required:
           - typeName
           - title
+#          - posts

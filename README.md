@@ -16,6 +16,10 @@ Generates graphql schema from Swagger/OpenAPI spec file. Provides GraphQL resolv
 - [ ] Cache same requests in one query
 - [ ] Support for OpenAPI 3.x
 
+# Installation
+
+	$ yarn add https://github.com/brabeji/swagger-graphql-schema.git#650f0ac9e55d5a6bbccd311eac3e6297fd3f7b4d
+
 # Example
 
 Having this simple swaggerfile:

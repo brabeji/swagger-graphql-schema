@@ -1,0 +1,263 @@
+swagger: '2-with-anyOf'
+info:
+  version: '0.0.1'
+  title: Simple API
+basePath: /api
+paths:
+  /login:
+    post:
+      operationId: login
+      parameters:
+        - name: input
+          in: body
+          schema:
+            $ref: '#/definitions/LoginPayload'
+      responses:
+        200:
+          schema:
+            type: string
+  /posts:
+    get:
+      operationId: posts
+      responses:
+        200:
+          description: list of posts
+          schema:
+            type: array
+            items:
+              $ref: '#/definitions/Post'
+    post:
+      operationId: createPost
+      parameters:
+        - name: input
+          in: body
+          schema:
+            $ref: '#/definitions/Post'
+      responses:
+        200:
+          description: success
+          schema:
+            $ref: '#/definitions/Post'
+    put:
+      operationId: updatePostWithAdditionalData
+      parameters:
+        - name: input
+          in: body
+          schema:
+            title: UpdatePostWithAdditionalDataPayload
+            type: object
+            properties:
+              post:
+                $ref: '#/definitions/Post'
+              ad:
+                title: PostAdditionalData
+                type: object
+                properties:
+                  foo:
+                    type: array
+                    items:
+                      title: PostAdditionalDataItem
+                      type: object
+                      properties:
+                        bar:
+                          type: string
+                      required:
+                        - bar
+            required:
+              - post
+              - ad
+      responses:
+        200:
+          description: success
+          schema:
+            $ref: '#/definitions/Post'
+  /posts/{postId}/tags:
+    get:
+      operationId: postTags
+      responses:
+        200:
+          description: post tags
+          schema:
+            type: array
+            items:
+              $ref: '#/definitions/Tag'
+  /tag-search:
+    get:
+      operationId: tagSearchResults
+      parameters:
+        - name: q
+          in: query
+          type: string
+      responses:
+        200:
+          description: result
+          schema:
+            type: array
+            items:
+#              title: TagSearchItem
+#              allOf:
+#                - $ref: '#/definitions/Tagged'
+              $ref: '#/definitions/Tagged'
+  /search:
+    get:
+      operationId: search
+      parameters:
+        - name: q
+          in: query
+          type: string
+      responses:
+        200:
+          description: result
+          schema:
+            type: array
+            items:
+              anyOf:
+                - $ref: '#/definitions/Post'
+                - $ref: '#/definitions/Tag'
+                - $ref: '#/definitions/Category'
+definitions:
+  LoginPayload:
+    title: LoginPayload
+    type: object
+    properties:
+      username:
+        type: string
+        format: email
+      password:
+        type: string
+        writeOnly: true
+    required:
+      - username
+      - password
+  Node:
+    title: Node
+    type: object
+    properties:
+      id:
+        type: string
+        format: uuid
+        readOnly: true
+      createdAt:
+        type: string
+        format: date-time
+        readOnly: true
+    required:
+      - id
+      - createdAt
+  Coded:
+    title: Coded
+    type: object
+    properties:
+      code:
+        type: string
+    required:
+      - code
+  Tagged:
+    title: Tagged
+    type: object
+    properties:
+      tags:
+        type: array
+        items:
+          $ref: '#/definitions/Tag'
+        readOnly: true
+  Post:
+    title: Post
+    allOf:
+      - $ref: '#/definitions/Node'
+      - $ref: '#/definitions/Coded'
+      - $ref: '#/definitions/Tagged'
+      - type: object
+        properties:
+          typeName:
+            type: string
+            enum:
+              - Post
+          title:
+            type: string
+          foo:
+            type: object
+          features:
+            type: array
+            items:
+              type: object
+              properties:
+                description:
+                  type: string
+              required:
+                - description
+          properties:
+            type: object
+            readOnly: true
+            properties:
+              value:
+                type: object
+                properties:
+                  value:
+                    type: string
+          status:
+            $ref: '#/definitions/PostStatus'
+          description:
+            $ref: '#/definitions/PostDescription'
+          category:
+            $ref: '#/definitions/Category'
+        required:
+          - typeName
+          - title
+          - features
+          - properties
+        x-links:
+          tags: postTags
+  PostStatus:
+    type: string
+    enum:
+      - DRAFT
+      - PUBLISHED
+      - DELETED
+  PostSize:
+    title: PostSize
+    type: string
+    enum:
+      - SMALL
+      - MEDIUM
+      - BIG
+  PostDescription:
+    title: PostDescription
+    type: string
+  Tag:
+    title: Tag
+    type: object
+    properties:
+      typeName:
+        type: string
+        enum:
+          - Tag
+      name:
+        type: string
+        format: uniqueId
+    required:
+      - typeName
+      - name
+  Category:
+    title: Category
+    allOf:
+      - $ref: '#/definitions/Node'
+      - $ref: '#/definitions/Tagged'
+      - type: object
+        properties:
+          typeName:
+            type: string
+            enum:
+              - Category
+          title:
+            type: string
+#          posts:
+#            type: array
+#            items:
+#              $ref: '#/definitions/Post'
+#          post:
+#            $ref: '#/definitions/Post'
+        required:
+          - typeName
+          - title
+#          - posts

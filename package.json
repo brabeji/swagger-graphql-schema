@@ -5,22 +5,44 @@
   "license": "MIT",
   "scripts": {
     "build": "node ./node_modules/babel-cli/bin/babel src/ --out-dir lib --copy-files",
-    "build:watch": "yarn run build --watch"
+    "build:watch": "yarn run build --watch",
+    "test": "tape -r babel-register ./test/**/*.js",
+    "test:watch": "tape-watch -r babel-register ./test/**/*.js"
   },
   "devDependencies": {
+    "@std/esm": "^0.19.2",
+    "axios": "^0.17.1",
     "babel-cli": "^6.26.0",
     "babel-plugin-transform-object-rest-spread": "^6.26.0",
     "babel-preset-env": "^1.6.0",
-    "re-app-builder": "https://github.com/stackscz/re-app-builder.git#93b67c3ed616a73ed023f11715afe543c8dbb2c7"
+    "graphql": "^0.12.3",
+    "json-schema-faker": "^0.5.0-rc12",
+    "json-schema-ref-parser": "^4.0.4",
+    "perfy": "^1.1.2",
+    "re-app-builder": "https://github.com/stackscz/re-app-builder.git#93b67c3ed616a73ed023f11715afe543c8dbb2c7",
+    "tap-spec": "^4.1.1",
+    "tape": "^4.8.0",
+    "tape-catch": "^1.0.6",
+    "tape-watch": "^2.3.0",
+    "uuid": "^3.1.0"
   },
   "dependencies": {
+    "graphql-iso-date": "^3.3.0",
+    "graphql-scalars": "^0.1.4",
+    "graphql-tag": "^2.6.1",
+    "graphql-tools-types": "^1.1.13",
+    "graphql-type-json": "^0.1.4",
+    "graphql-union-input-type": "^0.3.1",
     "invariant": "^2.2.2",
     "lodash": "^4.17.4",
+    "seedrandom": "^2.4.3",
     "traverse": "^0.6.6",
     "uri-templates": "^0.2.0"
   },
   "peerDependencies": {
     "axios": "^0.16.2",
-    "graphql": "^0.11.6"
-  }
+    "graphql": "^0.12.3",
+    "graphql-tag": "^2.6.1"
+  },
+  "@std/esm": "cjs"
 }

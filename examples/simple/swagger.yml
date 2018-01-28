@@ -1,0 +1,88 @@
+swagger: '2'
+host: example.com
+schemes:
+  - https
+basePath: /api
+definitions:
+  Node:
+    title: Node # assigns name to resulting type.
+    # Generally all object schemas and schemas containing allOf or anyOf should have a title to avoid errors.
+    type: object
+    # Either GraphQLObjectType, GraphQLInputObjectType or GraphQLInterfaceType is be generated from object schema.
+    # Which exact type is generated depends on where the schema is referenced. Explanation is below.
+    properties:
+      id:
+        type: string
+        format: uuid # "uuid" and "uniqueId" formats will result into GraphQLID
+        readOnly: true
+    required:
+      - id # makes field non-nullable
+  Tag:
+    title: Tag
+    type: object
+    properties:
+      name:
+        type: string
+        format: uniqueId
+    required:
+      - name
+  Post:
+    title: Post
+    allOf:
+      - $ref: '#/definitions/Node' # GraphQLInterfaceType is generated when object schema is encountered under allOf
+      # Referencing Node schema both inside and outside of allOf will result in duplicate type name error.
+      # Either choose a schema to be an interface or object type. Do not nest interfaces using allOf or anyOf
+      # as that doesn't conform to GraphQL interfaces structure - this may be solved by flattening allOf in future.
+      - type: object
+        properties:
+          title:
+            type: string
+          authorEmail:
+            type: string
+            format: email # email (graphql-scalars), json (graphql-type-json) TODO: date, time, date-time (graphql-iso-date)
+          status:
+            type: string
+            # title: PostStatus
+            enum: # add enum from GraphQLEnumType. The type will by default be named Post_status unless a different name is specified by title.
+              - PUBLISHED
+              - DELETED
+          tags:
+            type: array
+            items:
+              $ref: '#/definitions/Tag'
+paths:
+  /search:
+    get:
+      operationId: search # this operation (GET /search) will turn into a query named "search"
+      parameters:
+        - in: query # the query will have non-nullable String argument named "query"
+          name: q
+          type: string
+          required: true
+      responses:
+        200:
+          schema:
+            type: array # generates GraphQLList
+            items:
+              # Generates GraphQLUnionType
+              title: SearchResultItem # assigns SearchResultItem as a name to the union type
+              anyOf: # specifies that SearchResultItem is union of different types.
+                # anyOf is invalid in Swagger 2.0 but will be specified in OpenAPI 3.x, see readme TODOs
+                - $ref: '#/definitions/Post'
+                - $ref: '#/definitions/Tag'
+  /posts:
+    post:
+      operationId: createPost # this operation (POST /posts) will turn into a mutation named "createPost"
+      parameters:
+        - in: body
+          name: input
+          schema:
+            $ref: '#/definitions/Post'
+            # Referencing object type in body parameter schema generates GraphQLInputObjectType with "Input" appended to
+            # original name, "PostInput" in this case. readOnly properties are removed.
+            # Post_tagsInput
+      responses:
+        200:
+          schema:
+            $ref: '#/definitions/Post' # Using same schema for parameter and response conforms to some REST recommendations and isn't required.
+            # Generally, this can be something completely different than Post.

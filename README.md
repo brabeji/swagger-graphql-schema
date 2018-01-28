@@ -18,7 +18,7 @@ Generates graphql schema from Swagger/OpenAPI spec file. Provides GraphQL resolv
 
 # Installation
 
-	$ yarn add https://github.com/brabeji/swagger-graphql-schema.git#650f0ac9e55d5a6bbccd311eac3e6297fd3f7b4d
+	$ yarn add https://github.com/brabeji/swagger-graphql-schema.git#a9882cdf79ebe520d3e85756d9e4e4706881562a
 
 # Example
 

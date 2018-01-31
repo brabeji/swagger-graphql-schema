@@ -294,6 +294,7 @@ test.only('xxx', (t) => {
 		.catch(
 			(error) => {
 				console.log('ERR', error);
+				t.end();
 			}
 		);
 });

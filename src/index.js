@@ -28,11 +28,11 @@ import {
 	GraphQLEnumType,
 	GraphQLUnionType,
 } from 'graphql';
-import {
-	GraphQLDate,
-	GraphQLTime,
-	GraphQLDateTime,
-} from 'graphql-iso-date';
+// import {
+// 	GraphQLDate,
+// 	GraphQLTime,
+// 	GraphQLDateTime,
+// } from 'graphql-iso-date';
 import GraphQLJSON from 'graphql-type-json';
 import GraphQLUnionInputType from 'graphql-union-input-type';
 // import {} from "graphql-tools-types" TODO constrained Int, Float, String...
@@ -41,10 +41,6 @@ import traverse from './traverse';
 import findQueriesDescriptions from './findQueriesDescriptions';
 import findMutationsDescriptions from './findMutationsDescriptions';
 import invariant from 'invariant';
-// import Ajv from 'ajv';
-// import ApiError from './ApiError';
-
-// const ajv = new Ajv({ allErrors: true });
 
 const SCALAR_TYPE_MAP = {
 	integer: GraphQLInt,
@@ -310,7 +306,7 @@ const parseObjectTypes = ({ schema: rootSchema, apiDefinition, operations, types
 													);
 												}
 												if ((paramIn === 'body' || paramIn === 'formData') && paramSchema) {
-													type = typesCache[paramSchema.$$rootInputType];
+													type = typesCache[paramSchema.$$inputType];
 												}
 												if (!type) {
 													type = GraphQLString;

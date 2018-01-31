@@ -1,0 +1,75 @@
+swagger: '2'
+host: example.com
+schemes:
+  - https
+basePath: /api
+definitions:
+  Node:
+    title: Node
+    type: object
+    properties:
+      id:
+        type: string
+        format: uuid
+        readOnly: true
+    required:
+      - id
+  Tag:
+    title: Tag
+    type: object
+    properties:
+      name:
+        type: string
+        format: uniqueId
+    required:
+      - name
+  Post:
+    title: Post
+    allOf:
+      - $ref: '#/definitions/Node'
+      - type: object
+        properties:
+          title:
+            type: string
+          authorEmail:
+            type: string
+            format: email
+          status:
+            type: string
+            enum:
+              - PUBLISHED
+              - DELETED
+          tags:
+            type: array
+            items:
+              $ref: '#/definitions/Tag'
+paths:
+  /search:
+    get:
+      operationId: search
+      parameters:
+        - in: query
+          name: q
+          type: string
+          required: true
+      responses:
+        200:
+          schema:
+            type: array
+            items:
+              title: SearchResultItem
+              anyOf:
+                - $ref: '#/definitions/Post'
+                - $ref: '#/definitions/Tag'
+  /posts:
+    post:
+      operationId: createPost
+      parameters:
+        - in: body
+          name: input
+          schema:
+            $ref: '#/definitions/Post'
+      responses:
+        200:
+          schema:
+            $ref: '#/definitions/Post'

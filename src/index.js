@@ -344,6 +344,51 @@ const parseObjectTypes = ({ schema: rootSchema, apiDefinition, operations, types
 	);
 };
 
+const parseInputObjectTypes = ({ schema: rootSchema, apiDefinition, operations, types: typesCache, createResolver, discriminatorFieldName }) => {
+	traverse(rootSchema).forEach(
+		function parseObjectType(schema, context) {
+			const isObjectWithProperties = schema.type === 'object' && !!schema.properties;
+			const isPlainType = (!context.parent || context.parent.key !== 'allOf') && (isObjectWithProperties || isArray(schema.allOf));
+			const isCached = schema.$$inputType;
+			if (isPlainType && !isCached) {
+				checkObjectSchemaForUnsupportedFeatures(schema);
+				const schemaId = Symbol(TYPE_SCHEMA_SYMBOL_LABEL);
+				schema.$$inputType = schemaId;
+				const { properties, required } = mergeAllOf(schema);
+				const name = `${extractTypeName(context)}Input`;
+				typesCache[schemaId] = new GraphQLInputObjectType(
+					{
+						name,
+						fields: () => Object
+							.keys(properties)
+							.filter((propertyName) => !properties[propertyName].readOnly && propertyName !== discriminatorFieldName)
+							.reduce(
+								(acc, propertyName) => {
+									const propertySchema = properties[propertyName];
+									let type = scalarTypeFromSchema(propertySchema);
+									if (!type) {
+										type = typesCache[propertySchema.$$inputType];
+									}
+									if (!type) {
+										type = typesCache[propertySchema.$$type];
+									}
+									// if (includes(required, propertyName)) {
+									// 	type = makeTypeRequired(type);
+									// }
+									const propertyDescriptor = {
+										type: getNullableType(type),
+									};
+									return { ...acc, [propertyName]: propertyDescriptor };
+								},
+								{},
+							),
+					}
+				);
+			}
+		},
+	);
+};
+
 const constructInputType = ({ schema, typeName: inputTypeName, typesCache, isNestedUnderEntity = false, discriminatorFieldName }) => {
 	checkObjectSchemaForUnsupportedFeatures(schema);
 
@@ -393,20 +438,6 @@ const constructInputType = ({ schema, typeName: inputTypeName, typesCache, isNes
 
 		const hasID = Object.keys(properties).reduce((acc, pn) => acc || isIdSchema(properties[pn]), false);
 		// const requireOnlyIdInput = hasID && isNestedUnderEntity;
-
-		const a = Object
-			.keys(properties)
-			.filter((k) => !properties[k].readOnly && !properties[k][IS_IN_INPUT_TYPE_CHAIN_SYMBOL]);
-		if (!Object.keys(a).length) {
-			console.log('>>>>>>>');
-			console.log('>>>>>>>');
-			console.log('>>>>>>>');
-			console.log(properties);
-			console.log(schema);
-			console.log('');
-			console.log('');
-			console.log('');
-		}
 
 		inputType = new GraphQLInputObjectType(
 			{
@@ -492,6 +523,33 @@ const parseUnions = ({ schema: rootSchema, types: typesCache, discriminatorField
 	);
 };
 
+const parseInputUnions = ({ schema: rootSchema, types: typesCache, discriminatorFieldName }) => {
+	traverse(rootSchema).forEach(
+		function parseUnion(schema, context) {
+			const isUnion = schema && isArray(schema.anyOf);
+			const isCached = schema && schema.$$inputType;
+			if (isUnion && !isCached) {
+				const schemaId = Symbol(TYPE_SCHEMA_SYMBOL_LABEL);
+				schema.$$inputType = schemaId;
+
+				typesCache[schemaId] = new GraphQLUnionInputType(
+					{
+						name: `${extractTypeName(context)}Input`,
+						types: () => {
+							return schema.anyOf.map(
+								(subSchema) => {
+									return typesCache[subSchema.$$inputType];
+								}
+							)
+						},
+						typeKey: discriminatorFieldName,
+					}
+				);
+			}
+		},
+	);
+};
+
 const parseLists = ({ schema: rootSchema, types: typesCache }) => {
 	traverse(rootSchema).forEach(
 		function parseList(schema) {
@@ -503,6 +561,27 @@ const parseLists = ({ schema: rootSchema, types: typesCache }) => {
 				let innerType = scalarTypeFromSchema(schema.items);
 				if (!innerType) {
 					innerType = typesCache[schema.items.$$type];
+				}
+				if (!innerType) {
+					throw new Error(`No graphql type found for schema\n\n${JSON.stringify(schema.items, null, 2)}`);
+				}
+				typesCache[schemaId] = new GraphQLList(innerType);
+			}
+		},
+	);
+};
+
+const parseInputLists = ({ schema: rootSchema, types: typesCache }) => {
+	traverse(rootSchema).forEach(
+		function parseList(schema) {
+			const isList = schema && schema.type === 'array' && schema.items;
+			const isCached = schema && schema.$$inputType;
+			if (isList && !isCached) {
+				const schemaId = Symbol(TYPE_SCHEMA_SYMBOL_LABEL);
+				schema.$$inputType = schemaId;
+				let innerType = scalarTypeFromSchema(schema.items);
+				if (!innerType) {
+					innerType = typesCache[schema.items.$$inputType];
 				}
 				if (!innerType) {
 					throw new Error(`No graphql type found for schema\n\n${JSON.stringify(schema.items, null, 2)}`);
@@ -573,7 +652,17 @@ const swaggerToSchema = ({ swagger: { paths }, swagger, createResolver, discrimi
 			);
 			parseUnions({ schema, types, discriminatorFieldName });
 			parseLists({ schema, types });
-			parseRootInputTypes({ schema, types, discriminatorFieldName });
+			// parseRootInputTypes({ schema, types, discriminatorFieldName });
+		},
+	);
+
+	[
+		completeSchema.definitions.Mutation.properties,
+	].forEach(
+		(schema) => {
+			parseInputObjectTypes({ schema, types, discriminatorFieldName });
+			parseInputUnions({ schema, types, discriminatorFieldName });
+			parseInputLists({ schema, types, discriminatorFieldName });
 		},
 	);
 

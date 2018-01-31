@@ -10,9 +10,9 @@ Generates graphql schema from Swagger/OpenAPI spec file. Provides GraphQL resolv
 - [x] Parse interfaces
 - [x] Parse unions
 - [x] Fetch fields recursively
-- [ ] Document options
-- [ ] Document resolver factory options
-- [ ] Create complex example and document `x-links`
+- [ ] Create complex example and write docs `x-links`
+- [ ] Write docs for options
+- [ ] Write docs for resolver factory options
 - [ ] Cache same requests in one query
 - [ ] Support for OpenAPI 3.x
 

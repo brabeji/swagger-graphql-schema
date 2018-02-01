@@ -252,7 +252,8 @@ test('it traverses and handles circular references', (t) => {
 test.only('xxx', (t) => {
 	// t.plan(1);
 	return RefParser
-		.dereference(path.resolve(__dirname, '../examples/complex/swagger.yml'))
+		// .dereference(path.resolve(__dirname, '../examples/complex/swagger.yml'))
+		.dereference(path.resolve(__dirname, './fixtures/swagger.json'))
 		.then(
 			(swagger) => {
 				try {

@@ -346,12 +346,12 @@ const parseInputObjectTypes = ({ schema: rootSchema, apiDefinition, operations, 
 			const isObjectWithProperties = schema.type === 'object' && !!schema.properties;
 			const isPlainType = (!context.parent || context.parent.key !== 'allOf') && (isObjectWithProperties || isArray(schema.allOf));
 			const isCached = schema.$$inputType;
+			const name = `${extractTypeName(context)}Input`;
 			if (isPlainType && !isCached) {
 				checkObjectSchemaForUnsupportedFeatures(schema);
 				const schemaId = Symbol(TYPE_SCHEMA_SYMBOL_LABEL);
 				schema.$$inputType = schemaId;
 				const { properties, required } = mergeAllOf(schema);
-				const name = `${extractTypeName(context)}Input`;
 				typesCache[schemaId] = new GraphQLInputObjectType(
 					{
 						name,
@@ -636,6 +636,25 @@ const swaggerToSchema = ({ swagger: { paths }, swagger, createResolver, discrimi
 		(schema) => {
 			parseEnums({ schema, types });
 			parseInterfaces({ schema, types });
+		},
+	);
+
+	[
+		completeSchema.paths,
+	].forEach(
+		(schema) => {
+			parseInputObjectTypes({ schema, types, discriminatorFieldName });
+			parseInputUnions({ schema, types, discriminatorFieldName });
+			parseInputLists({ schema, types, discriminatorFieldName });
+		},
+	);
+
+	[
+		completeSchema.definitions.Query,
+		completeSchema.definitions.Mutation,
+		completeSchema,
+	].forEach(
+		(schema) => {
 			parseObjectTypes(
 				{
 					schema,
@@ -649,16 +668,6 @@ const swaggerToSchema = ({ swagger: { paths }, swagger, createResolver, discrimi
 			parseUnions({ schema, types, discriminatorFieldName });
 			parseLists({ schema, types });
 			// parseRootInputTypes({ schema, types, discriminatorFieldName });
-		},
-	);
-
-	[
-		completeSchema.definitions.Mutation.properties,
-	].forEach(
-		(schema) => {
-			parseInputObjectTypes({ schema, types, discriminatorFieldName });
-			parseInputUnions({ schema, types, discriminatorFieldName });
-			parseInputLists({ schema, types, discriminatorFieldName });
 		},
 	);
 

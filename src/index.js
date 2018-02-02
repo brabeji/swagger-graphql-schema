@@ -41,6 +41,7 @@ import traverse from './traverse';
 import findQueriesDescriptions from './findQueriesDescriptions';
 import findMutationsDescriptions from './findMutationsDescriptions';
 import invariant from 'invariant';
+import { reduce } from 'lodash';
 
 const SCALAR_TYPE_MAP = {
 	integer: GraphQLInt,
@@ -357,10 +358,11 @@ const parseInputObjectTypes = ({ schema: rootSchema, apiDefinition, operations, 
 						name,
 						fields: () => Object
 							.keys(properties)
-							.filter((propertyName) => !properties[propertyName].readOnly && propertyName !== discriminatorFieldName)
+							.filter((propertyName) => !properties[propertyName].readOnly)
 							.reduce(
 								(acc, propertyName) => {
 									const propertySchema = properties[propertyName];
+
 									let type = scalarTypeFromSchema(propertySchema);
 									if (!type) {
 										type = typesCache[propertySchema.$$inputType];
@@ -413,15 +415,19 @@ const constructInputType = ({ schema, typeName: inputTypeName, typesCache, isNes
 		inputType = new GraphQLUnionInputType(
 			{
 				name: typeName,
-				types: schema.anyOf.map(
-					(unionPartSchema) => constructInputType(
-						{
-							schema: unionPartSchema,
-							typesCache,
-							isNestedUnderEntity: isNestedUnderEntity,
-							typeName: inputTypeName,
-						},
-					)
+				inputTypes: reduce(
+					schema.anyOf,
+					(acc, unionPartSchema) => {
+						return {
+							...acc,
+							[unionPartSchema.title]: constructInputType({
+									schema: unionPartSchema,
+									typesCache,
+									isNestedUnderEntity: isNestedUnderEntity,
+									typeName: inputTypeName,
+							}),
+						};
+					}
 				),
 				typeKey: discriminatorFieldName,
 			}
@@ -531,13 +537,12 @@ const parseInputUnions = ({ schema: rootSchema, types: typesCache, discriminator
 				typesCache[schemaId] = new GraphQLUnionInputType(
 					{
 						name: `${extractTypeName(context)}Input`,
-						types: () => {
-							return schema.anyOf.map(
-								(subSchema) => {
-									return typesCache[subSchema.$$inputType];
-								}
-							)
-						},
+						inputTypes: reduce(schema.anyOf, (acc, subSchema) => {
+							return {
+								...acc,
+								[subSchema.title]: typesCache[subSchema.$$inputType],
+							};
+						}, {}),
 						typeKey: discriminatorFieldName,
 					}
 				);

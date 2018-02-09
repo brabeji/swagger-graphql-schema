@@ -1,6 +1,6 @@
 {
   "name": "swagger-graphql-schema",
-  "version": "0.1.1-dev",
+  "version": "0.1.2-dev",
   "main": "./lib/index.js",
   "license": "MIT",
   "scripts": {
@@ -29,7 +29,7 @@
     "graphql-scalars": "^0.1.4",
     "graphql-tools-types": "^1.1.13",
     "graphql-type-json": "^0.1.4",
-    "graphql-union-input-type": "https://github.com/wrak/graphql-union-input-type.git#5d7b27d",
+    "graphql-union-input-type": "https://github.com/wrak/graphql-union-input-type.git#a43b6046cafb3767f88a7993995ce090052e56c9",
     "invariant": "^2.2.2",
     "lodash": "^4.17.4",
     "seedrandom": "^2.4.3",

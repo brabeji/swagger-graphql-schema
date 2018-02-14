@@ -165,7 +165,7 @@ const parseEnums = ({ schema: rootSchema, types: typesCache }) => {
 							(acc, enumValue) => {
 								return ({ ...acc, [enumValue]: { value: enumValue } })
 							},
-							[],
+							{},
 						),
 					}
 				);
@@ -347,21 +347,32 @@ const parseInputObjectTypes = ({ schema: rootSchema, apiDefinition, operations, 
 			const isObjectWithProperties = schema.type === 'object' && !!schema.properties;
 			const isPlainType = (!context.parent || context.parent.key !== 'allOf') && (isObjectWithProperties || isArray(schema.allOf));
 			const isCached = schema.$$inputType;
-			const name = `${extractTypeName(context)}Input`;
+			const baseName = extractTypeName(context);
+			const name = `${baseName}Input`;
 			if (isPlainType && !isCached) {
 				checkObjectSchemaForUnsupportedFeatures(schema);
 				const schemaId = Symbol(TYPE_SCHEMA_SYMBOL_LABEL);
 				schema.$$inputType = schemaId;
-				const { properties, required } = mergeAllOf(schema);
+				const {
+					properties: { [discriminatorFieldName]: typeNameProperty, ...properties },
+					// required,
+				} = mergeAllOf(schema);
+				const updatedProperties = {
+					[discriminatorFieldName]: {
+						...typeNameProperty,
+						readOnly: false,
+					},
+					...properties,
+				};
 				typesCache[schemaId] = new GraphQLInputObjectType(
 					{
 						name,
 						fields: () => Object
-							.keys(properties)
-							.filter((propertyName) => !properties[propertyName].readOnly)
+							.keys(updatedProperties)
+							.filter((propertyName) => !updatedProperties[propertyName].readOnly)
 							.reduce(
 								(acc, propertyName) => {
-									const propertySchema = properties[propertyName];
+									const propertySchema = updatedProperties[propertyName];
 
 									let type = scalarTypeFromSchema(propertySchema);
 									if (!type) {
@@ -369,6 +380,14 @@ const parseInputObjectTypes = ({ schema: rootSchema, apiDefinition, operations, 
 									}
 									if (!type) {
 										type = typesCache[propertySchema.$$type];
+									}
+									if (!type && propertyName === discriminatorFieldName) {
+										type = new GraphQLEnumType(
+											{
+												name: `${baseName}_${discriminatorFieldName}`,
+												values: { [baseName]: { value: baseName } },
+											}
+										);
 									}
 									// if (includes(required, propertyName)) {
 									// 	type = makeTypeRequired(type);
@@ -421,10 +440,10 @@ const constructInputType = ({ schema, typeName: inputTypeName, typesCache, isNes
 						return {
 							...acc,
 							[unionPartSchema.title]: constructInputType({
-									schema: unionPartSchema,
-									typesCache,
-									isNestedUnderEntity: isNestedUnderEntity,
-									typeName: inputTypeName,
+								schema: unionPartSchema,
+								typesCache,
+								isNestedUnderEntity: isNestedUnderEntity,
+								typeName: inputTypeName,
 							}),
 						};
 					}

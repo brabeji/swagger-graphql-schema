@@ -11,10 +11,11 @@
   },
   "devDependencies": {
     "@std/esm": "^0.19.2",
-    "axios": "^0.17.1",
+    "axios": "^0.16.2",
     "babel-cli": "^6.26.0",
     "babel-plugin-transform-object-rest-spread": "^6.26.0",
     "babel-preset-env": "^1.6.0",
+    "graphql-tag": "^2.7.3",
     "json-schema-faker": "^0.5.0-rc12",
     "json-schema-ref-parser": "^4.0.4",
     "perfy": "^1.1.2",

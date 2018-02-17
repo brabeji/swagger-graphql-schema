@@ -1,3 +1,5 @@
+import dereferenceLocalAbsoluteJsonPointers from './dereferenceLocalAbsoluteJsonPointers';
+
 import {
 	mapValues,
 	get as g,
@@ -707,3 +709,5 @@ const swaggerToSchema = ({ swagger: { paths }, swagger, createResolver, discrimi
 };
 
 export default swaggerToSchema;
+
+export { dereferenceLocalAbsoluteJsonPointers };

@@ -119,18 +119,23 @@ Convert it to graphql schema:
 
 ```javascript
 import RefParser from 'json-schema-ref-parser';
-import swaggerToSchema, { createHttpResolver, createFakerResolver } from 'swagger-graphql-schema';
+import swaggerToSchema, { dereferenceLocalAbsoluteJsonPointers } from 'swagger-graphql-schema';
+import createHttpResolver from 'swagger-graphql-schema/lib/createHttpResolver';
+// OR import createFakerResolver from 'swagger-graphql-schema/lib/createFakerResolver';
 import { printSchema } from 'graphql';
 
 RefParser
 	// swagger-graphql-schema accepts possibly cyclic js object without json pointers
-	// so your yaml file should be dereferenced with json-schema-ref-parser
-	.dereference(path.resolve(__dirname, './examples/simple/swagger.yml'))
+	// so your yaml file should be bundled with json-schema-ref-parser and
+	// then dereferenced using built-in utility function.
+	// Dereferencing using json-schema-ref-parser's dereference() is slow
+	// for large schemas
+	.bundle(path.resolve(__dirname, './examples/simple/swagger.yml'))
 	.then(
-		(swagger) => {
+		(bundledSwagger) => {
 			const schema = swaggerToSchema(
 				{ 
-					swagger, 
+					dereferenceLocalAbsoluteJsonPointers(swagger), 
 					createResolver: createHttpResolver, 
 					// createResolver: createFakerResolver, for json-schema-faker data 
 				}

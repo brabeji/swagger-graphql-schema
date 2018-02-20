@@ -186,6 +186,7 @@ const parseInterfaces = ({ schema: rootSchema, types: typesCache }) => {
 				const schemaId = Symbol(TYPE_SCHEMA_SYMBOL_LABEL);
 				schema.$$type = schemaId;
 				const properties = schema.properties;
+				const required = schema.required;
 				typesCache[schemaId] = new GraphQLInterfaceType(
 					{
 						name: extractTypeName(context),
@@ -195,6 +196,13 @@ const parseInterfaces = ({ schema: rootSchema, types: typesCache }) => {
 								let type = scalarTypeFromSchema(propertySchema);
 								if (!type) {
 									type = typesCache[propertySchema.$$type];
+								}
+								if (includes(required, propertyName)) {
+									try {
+										type = makeTypeRequired(type);
+									} catch (error) {
+										console.log(type, propertyName, propertySchema);
+									}
 								}
 								const propertyDescriptor = {
 									type,

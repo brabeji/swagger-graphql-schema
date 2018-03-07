@@ -150,7 +150,7 @@ const scalarTypeFromSchema = (schema, schemaName) => {
 	return resultingType;
 };
 
-const parseEnums = ({ schema: rootSchema, types: typesCache }) => {
+const parseEnums = ({ schema: rootSchema, operations, types: typesCache }) => {
 	traverse(rootSchema).forEach(
 		function parseEnum(schema, context) {
 			// const isEnum = (schema.type === 'string' || schema.type === 'boolean') && isArray(schema.enum);
@@ -176,7 +176,80 @@ const parseEnums = ({ schema: rootSchema, types: typesCache }) => {
 	);
 };
 
-const parseInterfaces = ({ schema: rootSchema, types: typesCache }) => {
+const constructOperationArgsAndResolver = (apiDefinition, operations, links, propertyName, createResolver, typesCache) => {
+	const operation = g(operations, g(links, propertyName));
+	let resolve;
+	let args;
+	if (operation) {
+		const schemaResolve = createResolver(
+			{ apiDefinition, propertyName, operation }
+		);
+		resolve = (root, args, context, info) => {
+			let resolvedValue = g(root, propertyName);
+			if (!resolvedValue) {
+				resolvedValue = schemaResolve(root, args, context, info);
+			}
+
+			// TODO json schema validation
+			// if (operation.schema) {
+			// 	const valid = ajv.validate(operation.schema, resolvedValue);
+			// 	if (!valid) {
+			// 		throw new ApiError(
+			// 			{
+			// 				code: 5000,
+			// 				data: {
+			// 					validatedInstance: resolvedValue,
+			// 					validationErrors: ajv.errors,
+			// 				},
+			// 			}
+			// 		)
+			// 	}
+			// }
+
+			return resolvedValue;
+		};
+		args = operation.parameters.reduce(
+			(acc, parameter) => {
+				const {
+					name: paramName,
+					required,
+					['in']: paramIn,
+					type: parameterType,
+					format: parameterFormat,
+					['x-argPath']: argPath,
+					schema: paramSchema,
+				} = parameter;
+				if (!argPath) {
+					// this is a root operation or resolution path is not defined => parameter is required
+					let type;
+					if (parameterType) {
+						type = scalarTypeFromSchema(
+							{ type: parameterType, format: parameterFormat }
+						);
+					}
+					if ((paramIn === 'body' || paramIn === 'formData') && paramSchema) {
+						type = typesCache[paramSchema.$$inputType];
+					}
+					if (!type) {
+						type = GraphQLString;
+					}
+					if ((required || paramIn === 'path') && parameterType !== 'file') {
+						type = makeTypeRequired(type);
+					}
+					return {
+						...acc,
+						[paramName]: { type },
+					}
+				}
+				return acc;
+			},
+			{}
+		)
+	}
+	return { args, resolve };
+};
+
+const parseInterfaces = ({ schema: rootSchema, apiDefinition, operations, types: typesCache, createResolver }) => {
 	traverse(rootSchema).forEach(
 		function parseInterface(schema, context) {
 			const isInterface = context.parent && context.parent.key === 'allOf' && schema.type === 'object' && isString(schema.title);
@@ -185,8 +258,7 @@ const parseInterfaces = ({ schema: rootSchema, types: typesCache }) => {
 				checkObjectSchemaForUnsupportedFeatures(schema);
 				const schemaId = Symbol(TYPE_SCHEMA_SYMBOL_LABEL);
 				schema.$$type = schemaId;
-				const properties = schema.properties;
-				const required = schema.required;
+				const { properties, ['x-links']: links, required } = schema;
 				typesCache[schemaId] = new GraphQLInterfaceType(
 					{
 						name: extractTypeName(context),
@@ -204,8 +276,18 @@ const parseInterfaces = ({ schema: rootSchema, types: typesCache }) => {
 										console.log(type, propertyName, propertySchema);
 									}
 								}
+								const { args, resolve } = constructOperationArgsAndResolver(
+									apiDefinition,
+									operations,
+									links,
+									propertyName,
+									createResolver,
+									typesCache,
+								);
 								const propertyDescriptor = {
 									type,
+									args,
+									resolve,
 								};
 								return { ...acc, [propertyName]: propertyDescriptor };
 							},
@@ -266,75 +348,14 @@ const parseObjectTypes = ({ schema: rootSchema, apiDefinition, operations, types
 										console.log(type, propertyName, propertySchema);
 									}
 								}
-								const operation = g(operations, g(links, propertyName));
-								let resolve;
-								let args;
-								if (operation) {
-									const schemaResolve = createResolver(
-										{ apiDefinition, propertyName, operation }
-									);
-									resolve = (root, args, context, info) => {
-										let resolvedValue = g(root, propertyName);
-										if (!resolvedValue) {
-											resolvedValue = schemaResolve(root, args, context, info);
-										}
-
-										// TODO json schema validation
-										// if (operation.schema) {
-										// 	const valid = ajv.validate(operation.schema, resolvedValue);
-										// 	if (!valid) {
-										// 		throw new ApiError(
-										// 			{
-										// 				code: 5000,
-										// 				data: {
-										// 					validatedInstance: resolvedValue,
-										// 					validationErrors: ajv.errors,
-										// 				},
-										// 			}
-										// 		)
-										// 	}
-										// }
-
-										return resolvedValue;
-									};
-									args = operation.parameters.reduce(
-										(acc, parameter) => {
-											const {
-												name: paramName,
-												required,
-												['in']: paramIn,
-												type: parameterType,
-												format: parameterFormat,
-												['x-argPath']: argPath,
-												schema: paramSchema,
-											} = parameter;
-											if (!argPath) {
-												// this is a root operation or resolution path is not defined => parameter is required
-												let type;
-												if (parameterType) {
-													type = scalarTypeFromSchema(
-														{ type: parameterType, format: parameterFormat }
-													);
-												}
-												if ((paramIn === 'body' || paramIn === 'formData') && paramSchema) {
-													type = typesCache[paramSchema.$$inputType];
-												}
-												if (!type) {
-													type = GraphQLString;
-												}
-												if ((required || paramIn === 'path') && parameterType !== 'file') {
-													type = makeTypeRequired(type);
-												}
-												return {
-													...acc,
-													[paramName]: { type },
-												}
-											}
-											return acc;
-										},
-										{}
-									)
-								}
+								const { args, resolve } = constructOperationArgsAndResolver(
+									apiDefinition,
+									operations,
+									links,
+									propertyName,
+									createResolver,
+									typesCache,
+								);
 								const propertyDescriptor = {
 									type,
 									args,
@@ -669,7 +690,15 @@ const swaggerToSchema = ({ swagger: { paths }, swagger, createResolver, discrimi
 	].forEach(
 		(schema) => {
 			parseEnums({ schema, types });
-			parseInterfaces({ schema, types });
+			parseInterfaces(
+				{
+					schema,
+					operations,
+					apiDefinition: completeSchema,
+					types,
+					createResolver,
+				}
+			);
 		},
 	);
 

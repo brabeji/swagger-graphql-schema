@@ -4,10 +4,7 @@ import { get as g } from 'lodash';
 const VISITED = Symbol('visited');
 const slashRegex = /\//g;
 const dereference = (schema, root, cache) => {
-	if (typeof schema !== 'object') {
-		return schema;
-	}
-	if (schema[VISITED]) {
+	if (!schema || typeof schema !== 'object' || schema[VISITED]) {
 		return schema;
 	}
 

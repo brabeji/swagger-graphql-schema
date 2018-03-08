@@ -52,7 +52,11 @@ const createHttpResolver = ({ apiDefinition, propertyName, operation: operationD
 			}
 		);
 		const method = g(operationDescriptor, 'operationMethod', 'get');
-		let callArguments = [resourceUri, context.http];
+
+		let reqConfig = {
+			url: resourceUri,
+			...context.http,
+		}
 
 		// if endpoint consumes multipart/form-data and all required form-data
 		// fields are filled, build multipart/form-data request instead of
@@ -93,44 +97,40 @@ const createHttpResolver = ({ apiDefinition, propertyName, operation: operationD
 				}
 			});
 
-			callArguments = [
-				callArguments[0],
-				formData,
-				merge( // extend by headers needed by multipart/form-data request
-					callArguments[1],
-					{
-						'Content-Type': 'multipart/form-data',
-					}
-				)
-			];
+			reqConfig['data'] = formData;
+			reqConfig['headers']['Content-Type'] = 'multipart/form-data';
 		} else {
 			// build classic application/json request
 			const bodyParameter = find(parameters, { ['in']: 'body' });
+
 			if (bodyParameter) {
-				callArguments = [callArguments[0], args[bodyParameter.name], callArguments[1]];
+				reqConfig['data'] = args[bodyParameter.name]
 			}
 		}
 
-		return axios[method](...callArguments)
-			.then(
-				(response) => {
-					return response.data;
+		return axios({
+			method,
+			...reqConfig,
+		})
+		.then(
+			(response) => {
+				return response.data;
+			}
+		)
+		.catch(
+			(error) => {
+				if (process.env.NODE_ENV === 'development') {
+					console.log(`Resolver error for GET "${resourceUri}"`);
 				}
-			)
-			.catch(
-				(error) => {
-					if (process.env.NODE_ENV === 'development') {
-						console.log(`Resolver error for GET "${resourceUri}"`);
-					}
 
-					throw new ApiError(
-						{
-							code: error.response.status,
-							data: error.response.data,
-						}
-					)
-				}
-			)
+				throw new ApiError(
+					{
+						code: error.response.status,
+						data: error.response.data,
+					}
+				)
+			}
+		)
 	};
 };
 

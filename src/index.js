@@ -1,3 +1,5 @@
+import dereferenceLocalAbsoluteJsonPointers from './dereferenceLocalAbsoluteJsonPointers';
+
 import {
 	mapValues,
 	get as g,
@@ -28,11 +30,11 @@ import {
 	GraphQLEnumType,
 	GraphQLUnionType,
 } from 'graphql';
-import {
-	GraphQLDate,
-	GraphQLTime,
-	GraphQLDateTime,
-} from 'graphql-iso-date';
+// import {
+// 	GraphQLDate,
+// 	GraphQLTime,
+// 	GraphQLDateTime,
+// } from 'graphql-iso-date';
 import GraphQLJSON from 'graphql-type-json';
 import GraphQLUnionInputType from 'graphql-union-input-type';
 // import {} from "graphql-tools-types" TODO constrained Int, Float, String...
@@ -41,10 +43,7 @@ import traverse from './traverse';
 import findQueriesDescriptions from './findQueriesDescriptions';
 import findMutationsDescriptions from './findMutationsDescriptions';
 import invariant from 'invariant';
-// import Ajv from 'ajv';
-// import ApiError from './ApiError';
-
-// const ajv = new Ajv({ allErrors: true });
+import { reduce } from 'lodash';
 
 const SCALAR_TYPE_MAP = {
 	integer: GraphQLInt,
@@ -151,7 +150,7 @@ const scalarTypeFromSchema = (schema, schemaName) => {
 	return resultingType;
 };
 
-const parseEnums = ({ schema: rootSchema, types: typesCache }) => {
+const parseEnums = ({ schema: rootSchema, operations, types: typesCache }) => {
 	traverse(rootSchema).forEach(
 		function parseEnum(schema, context) {
 			// const isEnum = (schema.type === 'string' || schema.type === 'boolean') && isArray(schema.enum);
@@ -168,7 +167,7 @@ const parseEnums = ({ schema: rootSchema, types: typesCache }) => {
 							(acc, enumValue) => {
 								return ({ ...acc, [enumValue]: { value: enumValue } })
 							},
-							[],
+							{},
 						),
 					}
 				);
@@ -177,7 +176,80 @@ const parseEnums = ({ schema: rootSchema, types: typesCache }) => {
 	);
 };
 
-const parseInterfaces = ({ schema: rootSchema, types: typesCache }) => {
+const constructOperationArgsAndResolver = (apiDefinition, operations, links, propertyName, createResolver, typesCache) => {
+	const operation = g(operations, g(links, propertyName));
+	let resolve;
+	let args;
+	if (operation) {
+		const schemaResolve = createResolver(
+			{ apiDefinition, propertyName, operation }
+		);
+		resolve = (root, args, context, info) => {
+			let resolvedValue = g(root, propertyName);
+			if (!resolvedValue) {
+				resolvedValue = schemaResolve(root, args, context, info);
+			}
+
+			// TODO json schema validation
+			// if (operation.schema) {
+			// 	const valid = ajv.validate(operation.schema, resolvedValue);
+			// 	if (!valid) {
+			// 		throw new ApiError(
+			// 			{
+			// 				code: 5000,
+			// 				data: {
+			// 					validatedInstance: resolvedValue,
+			// 					validationErrors: ajv.errors,
+			// 				},
+			// 			}
+			// 		)
+			// 	}
+			// }
+
+			return resolvedValue;
+		};
+		args = operation.parameters.reduce(
+			(acc, parameter) => {
+				const {
+					name: paramName,
+					required,
+					['in']: paramIn,
+					type: parameterType,
+					format: parameterFormat,
+					['x-argPath']: argPath,
+					schema: paramSchema,
+				} = parameter;
+				if (!argPath) {
+					// this is a root operation or resolution path is not defined => parameter is required
+					let type;
+					if (parameterType) {
+						type = scalarTypeFromSchema(
+							{ type: parameterType, format: parameterFormat }
+						);
+					}
+					if ((paramIn === 'body' || paramIn === 'formData') && paramSchema) {
+						type = typesCache[paramSchema.$$inputType];
+					}
+					if (!type) {
+						type = GraphQLString;
+					}
+					if ((required || paramIn === 'path') && parameterType !== 'file') {
+						type = makeTypeRequired(type);
+					}
+					return {
+						...acc,
+						[paramName]: { type },
+					}
+				}
+				return acc;
+			},
+			{}
+		)
+	}
+	return { args, resolve };
+};
+
+const parseInterfaces = ({ schema: rootSchema, apiDefinition, operations, types: typesCache, createResolver }) => {
 	traverse(rootSchema).forEach(
 		function parseInterface(schema, context) {
 			const isInterface = context.parent && context.parent.key === 'allOf' && schema.type === 'object' && isString(schema.title);
@@ -186,7 +258,7 @@ const parseInterfaces = ({ schema: rootSchema, types: typesCache }) => {
 				checkObjectSchemaForUnsupportedFeatures(schema);
 				const schemaId = Symbol(TYPE_SCHEMA_SYMBOL_LABEL);
 				schema.$$type = schemaId;
-				const properties = schema.properties;
+				const { properties, ['x-links']: links, required } = schema;
 				typesCache[schemaId] = new GraphQLInterfaceType(
 					{
 						name: extractTypeName(context),
@@ -197,8 +269,25 @@ const parseInterfaces = ({ schema: rootSchema, types: typesCache }) => {
 								if (!type) {
 									type = typesCache[propertySchema.$$type];
 								}
+								if (includes(required, propertyName)) {
+									try {
+										type = makeTypeRequired(type);
+									} catch (error) {
+										console.log(type, propertyName, propertySchema);
+									}
+								}
+								const { args, resolve } = constructOperationArgsAndResolver(
+									apiDefinition,
+									operations,
+									links,
+									propertyName,
+									createResolver,
+									typesCache,
+								);
 								const propertyDescriptor = {
 									type,
+									args,
+									resolve,
 								};
 								return { ...acc, [propertyName]: propertyDescriptor };
 							},
@@ -259,75 +348,14 @@ const parseObjectTypes = ({ schema: rootSchema, apiDefinition, operations, types
 										console.log(type, propertyName, propertySchema);
 									}
 								}
-								const operation = g(operations, g(links, propertyName));
-								let resolve;
-								let args;
-								if (operation) {
-									const schemaResolve = createResolver(
-										{ apiDefinition, propertyName, operation }
-									);
-									resolve = (root, args, context, info) => {
-										let resolvedValue = g(root, propertyName);
-										if (!resolvedValue) {
-											resolvedValue = schemaResolve(root, args, context, info);
-										}
-
-										// TODO json schema validation
-										// if (operation.schema) {
-										// 	const valid = ajv.validate(operation.schema, resolvedValue);
-										// 	if (!valid) {
-										// 		throw new ApiError(
-										// 			{
-										// 				code: 5000,
-										// 				data: {
-										// 					validatedInstance: resolvedValue,
-										// 					validationErrors: ajv.errors,
-										// 				},
-										// 			}
-										// 		)
-										// 	}
-										// }
-
-										return resolvedValue;
-									};
-									args = operation.parameters.reduce(
-										(acc, parameter) => {
-											const {
-												name: paramName,
-												required,
-												['in']: paramIn,
-												type: parameterType,
-												format: parameterFormat,
-												['x-argPath']: argPath,
-												schema: paramSchema,
-											} = parameter;
-											if (!argPath) {
-												// this is a root operation or resolution path is not defined => parameter is required
-												let type;
-												if (parameterType) {
-													type = scalarTypeFromSchema(
-														{ type: parameterType, format: parameterFormat }
-													);
-												}
-												if ((paramIn === 'body' || paramIn === 'formData') && paramSchema) {
-													type = typesCache[paramSchema.$$rootInputType];
-												}
-												if (!type) {
-													type = GraphQLString;
-												}
-												if ((required || paramIn === 'path') && parameterType !== 'file') {
-													type = makeTypeRequired(type);
-												}
-												return {
-													...acc,
-													[paramName]: { type },
-												}
-											}
-											return acc;
-										},
-										{}
-									)
-								}
+								const { args, resolve } = constructOperationArgsAndResolver(
+									apiDefinition,
+									operations,
+									links,
+									propertyName,
+									createResolver,
+									typesCache,
+								);
 								const propertyDescriptor = {
 									type,
 									args,
@@ -337,6 +365,71 @@ const parseObjectTypes = ({ schema: rootSchema, apiDefinition, operations, types
 							},
 							{},
 						),
+					}
+				);
+			}
+		},
+	);
+};
+
+const parseInputObjectTypes = ({ schema: rootSchema, apiDefinition, operations, types: typesCache, createResolver, discriminatorFieldName }) => {
+	traverse(rootSchema).forEach(
+		function parseObjectType(schema, context) {
+			const isObjectWithProperties = schema.type === 'object' && !!schema.properties;
+			const isPlainType = (!context.parent || context.parent.key !== 'allOf') && (isObjectWithProperties || isArray(schema.allOf));
+			const isCached = schema.$$inputType;
+			const baseName = extractTypeName(context);
+			const name = `${baseName}Input`;
+			if (isPlainType && !isCached) {
+				checkObjectSchemaForUnsupportedFeatures(schema);
+				const schemaId = Symbol(TYPE_SCHEMA_SYMBOL_LABEL);
+				schema.$$inputType = schemaId;
+				const {
+					properties: { [discriminatorFieldName]: typeNameProperty, ...properties },
+					// required,
+				} = mergeAllOf(schema);
+				const updatedProperties = {
+					[discriminatorFieldName]: {
+						...typeNameProperty,
+						readOnly: false,
+					},
+					...properties,
+				};
+				typesCache[schemaId] = new GraphQLInputObjectType(
+					{
+						name,
+						fields: () => Object
+							.keys(updatedProperties)
+							.filter((propertyName) => !updatedProperties[propertyName].readOnly)
+							.reduce(
+								(acc, propertyName) => {
+									const propertySchema = updatedProperties[propertyName];
+
+									let type = scalarTypeFromSchema(propertySchema);
+									if (!type) {
+										type = typesCache[propertySchema.$$inputType];
+									}
+									if (!type) {
+										type = typesCache[propertySchema.$$type];
+									}
+									if (!type && propertyName === discriminatorFieldName) {
+										type = new GraphQLEnumType(
+											{
+												name: `${baseName}_${discriminatorFieldName}`,
+												values: { [baseName]: { value: baseName } },
+											}
+										);
+									}
+									// if (includes(required, propertyName)) {
+									// 	type = makeTypeRequired(type);
+									// }
+									const propertyDescriptor = {
+										type: getNullableType(type),
+									};
+									return { ...acc, [propertyName]: propertyDescriptor };
+								},
+								{},
+							),
 					}
 				);
 			}
@@ -372,15 +465,19 @@ const constructInputType = ({ schema, typeName: inputTypeName, typesCache, isNes
 		inputType = new GraphQLUnionInputType(
 			{
 				name: typeName,
-				types: schema.anyOf.map(
-					(unionPartSchema) => constructInputType(
-						{
-							schema: unionPartSchema,
-							typesCache,
-							isNestedUnderEntity: isNestedUnderEntity,
-							typeName: inputTypeName,
-						},
-					)
+				inputTypes: reduce(
+					schema.anyOf,
+					(acc, unionPartSchema) => {
+						return {
+							...acc,
+							[unionPartSchema.title]: constructInputType({
+								schema: unionPartSchema,
+								typesCache,
+								isNestedUnderEntity: isNestedUnderEntity,
+								typeName: inputTypeName,
+							}),
+						};
+					}
 				),
 				typeKey: discriminatorFieldName,
 			}
@@ -393,20 +490,6 @@ const constructInputType = ({ schema, typeName: inputTypeName, typesCache, isNes
 
 		const hasID = Object.keys(properties).reduce((acc, pn) => acc || isIdSchema(properties[pn]), false);
 		// const requireOnlyIdInput = hasID && isNestedUnderEntity;
-
-		const a = Object
-			.keys(properties)
-			.filter((k) => !properties[k].readOnly && !properties[k][IS_IN_INPUT_TYPE_CHAIN_SYMBOL]);
-		if (!Object.keys(a).length) {
-			console.log('>>>>>>>');
-			console.log('>>>>>>>');
-			console.log('>>>>>>>');
-			console.log(properties);
-			console.log(schema);
-			console.log('');
-			console.log('');
-			console.log('');
-		}
 
 		inputType = new GraphQLInputObjectType(
 			{
@@ -492,6 +575,32 @@ const parseUnions = ({ schema: rootSchema, types: typesCache, discriminatorField
 	);
 };
 
+const parseInputUnions = ({ schema: rootSchema, types: typesCache, discriminatorFieldName }) => {
+	traverse(rootSchema).forEach(
+		function parseUnion(schema, context) {
+			const isUnion = schema && isArray(schema.anyOf);
+			const isCached = schema && schema.$$inputType;
+			if (isUnion && !isCached) {
+				const schemaId = Symbol(TYPE_SCHEMA_SYMBOL_LABEL);
+				schema.$$inputType = schemaId;
+
+				typesCache[schemaId] = new GraphQLUnionInputType(
+					{
+						name: `${extractTypeName(context)}Input`,
+						inputTypes: reduce(schema.anyOf, (acc, subSchema) => {
+							return {
+								...acc,
+								[subSchema.title]: typesCache[subSchema.$$inputType],
+							};
+						}, {}),
+						typeKey: discriminatorFieldName,
+					}
+				);
+			}
+		},
+	);
+};
+
 const parseLists = ({ schema: rootSchema, types: typesCache }) => {
 	traverse(rootSchema).forEach(
 		function parseList(schema) {
@@ -503,6 +612,27 @@ const parseLists = ({ schema: rootSchema, types: typesCache }) => {
 				let innerType = scalarTypeFromSchema(schema.items);
 				if (!innerType) {
 					innerType = typesCache[schema.items.$$type];
+				}
+				if (!innerType) {
+					throw new Error(`No graphql type found for schema\n\n${JSON.stringify(schema.items, null, 2)}`);
+				}
+				typesCache[schemaId] = new GraphQLList(innerType);
+			}
+		},
+	);
+};
+
+const parseInputLists = ({ schema: rootSchema, types: typesCache }) => {
+	traverse(rootSchema).forEach(
+		function parseList(schema) {
+			const isList = schema && schema.type === 'array' && schema.items;
+			const isCached = schema && schema.$$inputType;
+			if (isList && !isCached) {
+				const schemaId = Symbol(TYPE_SCHEMA_SYMBOL_LABEL);
+				schema.$$inputType = schemaId;
+				let innerType = scalarTypeFromSchema(schema.items);
+				if (!innerType) {
+					innerType = typesCache[schema.items.$$inputType];
 				}
 				if (!innerType) {
 					throw new Error(`No graphql type found for schema\n\n${JSON.stringify(schema.items, null, 2)}`);
@@ -560,7 +690,34 @@ const swaggerToSchema = ({ swagger: { paths }, swagger, createResolver, discrimi
 	].forEach(
 		(schema) => {
 			parseEnums({ schema, types });
-			parseInterfaces({ schema, types });
+			parseInterfaces(
+				{
+					schema,
+					operations,
+					apiDefinition: completeSchema,
+					types,
+					createResolver,
+				}
+			);
+		},
+	);
+
+	[
+		completeSchema.paths,
+	].forEach(
+		(schema) => {
+			parseInputObjectTypes({ schema, types, discriminatorFieldName });
+			parseInputUnions({ schema, types, discriminatorFieldName });
+			parseInputLists({ schema, types, discriminatorFieldName });
+		},
+	);
+
+	[
+		completeSchema.definitions.Query,
+		completeSchema.definitions.Mutation,
+		completeSchema,
+	].forEach(
+		(schema) => {
 			parseObjectTypes(
 				{
 					schema,
@@ -573,7 +730,7 @@ const swaggerToSchema = ({ swagger: { paths }, swagger, createResolver, discrimi
 			);
 			parseUnions({ schema, types, discriminatorFieldName });
 			parseLists({ schema, types });
-			parseRootInputTypes({ schema, types, discriminatorFieldName });
+			// parseRootInputTypes({ schema, types, discriminatorFieldName });
 		},
 	);
 
@@ -589,3 +746,5 @@ const swaggerToSchema = ({ swagger: { paths }, swagger, createResolver, discrimi
 };
 
 export default swaggerToSchema;
+
+export { dereferenceLocalAbsoluteJsonPointers };

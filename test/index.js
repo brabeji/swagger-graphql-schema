@@ -1,7 +1,7 @@
 import test from 'tape';
 import path from 'path';
 import RefParser from 'json-schema-ref-parser';
-import { GraphQLSchema, execute } from 'graphql';
+import { GraphQLSchema, execute, printSchema } from 'graphql';
 import gql from 'graphql-tag';
 import { startsWith } from 'lodash';
 import perfy from 'perfy';
@@ -13,7 +13,7 @@ import traverse2 from '../src/traverse';
 
 let gqlSchema;
 
-test.only('it produces graphql schema', (t) => {
+test('it produces graphql schema', (t) => {
 	t.plan(1);
 	return RefParser.dereference(path.resolve(__dirname, './fixtures/swagger.json'))
 	.then(
@@ -245,6 +245,57 @@ test('it traverses and handles circular references', (t) => {
 		).catch(
 			(error) => {
 				console.log('ERR', error);
+			}
+		);
+});
+
+test.only('xxx', (t) => {
+	// t.plan(1);
+	return RefParser
+		// .dereference(path.resolve(__dirname, '../examples/complex/swagger.yml'))
+		.dereference(path.resolve(__dirname, './fixtures/swagger.json'))
+		.then(
+			(swagger) => {
+				try {
+					gqlSchema = swaggerToSchema({ swagger, createResolver: createFakerResolver });
+				} catch (error) {
+					t.error(error, 'swaggerToSchema thrown');
+					return;
+				}
+
+				t.assert(gqlSchema instanceof GraphQLSchema, 'Result is GraphQLSchema');
+
+				console.log(printSchema(gqlSchema));
+
+				return execute(
+					gqlSchema,
+					gql`
+                      query S {
+                        __schema {
+                          types {
+                            name
+                          }
+                        }
+                      }
+					`,
+					{},
+					{},
+					{
+						input: { },
+					},
+				);
+			}
+		)
+		.then(
+			(result) => {
+				// console.log(JSON.stringify(result.data.__schema.types.map(({name}) => name).join(", "), null, 2));
+				t.end();
+			},
+		)
+		.catch(
+			(error) => {
+				console.log('ERR', error);
+				t.end();
 			}
 		);
 });

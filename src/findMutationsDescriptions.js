@@ -18,6 +18,10 @@ const findMutationsDescriptions = (paths) => {
 							g(
 								operation,
 								['responses', '201', 'schema'],
+								g(
+									operation,
+									['responses', '204', 'schema'],
+								)
 							)
 						);
 						const lcMethod = method.toLowerCase();

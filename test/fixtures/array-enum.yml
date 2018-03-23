@@ -1,0 +1,46 @@
+swagger: '2-with-anyOf'
+info:
+  version: '0.0.1'
+  title: Simple API
+basePath: /api
+paths:
+  /posts:
+    get:
+      operationId: posts
+      responses:
+        200:
+          description: list of posts
+          schema:
+            type: array
+            items:
+              $ref: '#/definitions/Post'
+    post:
+      operationId: createPost
+      parameters:
+        - name: input
+          in: body
+          schema:
+            $ref: '#/definitions/Post'
+      responses:
+        200:
+          description: success
+          schema:
+            $ref: '#/definitions/Post'
+definitions:
+  Post:
+    title: Post
+    type: object
+    properties:
+      tags:
+        type: array
+        items:
+          $ref: '#/definitions/Tag'
+    required:
+      - tags
+  Tag:
+    title: Tag
+    type: string
+    enum:
+      - TAG_A
+      - TAG_B
+      - TAG_C

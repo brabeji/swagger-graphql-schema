@@ -201,6 +201,10 @@ definitions:
             $ref: '#/definitions/PostDescription'
           category:
             $ref: '#/definitions/Category'
+          stringTags:
+            type: array
+            items:
+              $ref: '#/definitions/StringTag'
         required:
           - typeName
           - title
@@ -224,6 +228,12 @@ definitions:
   PostDescription:
     title: PostDescription
     type: string
+  StringTag:
+    type: string
+    enum:
+      - TAG_A
+      - TAG_B
+      - TAG_C
   Tag:
     title: Tag
     type: object

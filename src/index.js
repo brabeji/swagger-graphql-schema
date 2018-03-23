@@ -98,7 +98,7 @@ const checkObjectSchemaForUnsupportedFeatures = (schema) => {
 const extractTypeName = (nodeContext) => {
 	// console.log('nodeContext.node', nodeContext.node.title);
 	const schema = nodeContext.node;
-	if (isString(schema.title)) {
+	if (schema && isString(schema.title)) {
 		return schema.title;
 	}
 	if (nodeContext.parent && nodeContext.parent.parent && nodeContext.parent.parent.node.type === 'object') {
@@ -154,15 +154,19 @@ const parseEnums = ({ schema: rootSchema, operations, types: typesCache }) => {
 	traverse(rootSchema).forEach(
 		function parseEnum(schema, context) {
 			// const isEnum = (schema.type === 'string' || schema.type === 'boolean') && isArray(schema.enum);
-			const isEnum = (schema.type === 'string') && isArray(schema.enum);
-			const isCached = schema.$$type;
+			const isEnum = schema && (schema.type === 'string') && isArray(schema.enum);
+			const isCached = schema && schema.$$type;
+			if (isEnum) {
+				console.log('isEnum', isEnum, 'isCached', isCached, schema);
+			}
 			if (isEnum && !isCached) {
 				const schemaId = Symbol(TYPE_SCHEMA_SYMBOL_LABEL);
 				schema.$$type = schemaId;
 				const enumValues = schema.enum;
+				const typeName = extractTypeName(context);
 				typesCache[schemaId] = new GraphQLEnumType(
 					{
-						name: extractTypeName(context),
+						name: typeName,
 						values: enumValues.reduce(
 							(acc, enumValue) => {
 								return ({ ...acc, [enumValue]: { value: enumValue } })
@@ -253,7 +257,7 @@ const parseInterfaces = ({ schema: rootSchema, apiDefinition, operations, types:
 	traverse(rootSchema).forEach(
 		function parseInterface(schema, context) {
 			const isInterface = context.parent && context.parent.key === 'allOf' && schema.type === 'object' && isString(schema.title);
-			const isCached = schema.$$type;
+			const isCached = schema && schema.$$type;
 			if (isInterface && !isCached) {
 				checkObjectSchemaForUnsupportedFeatures(schema);
 				const schemaId = Symbol(TYPE_SCHEMA_SYMBOL_LABEL);
@@ -303,9 +307,9 @@ const parseInterfaces = ({ schema: rootSchema, apiDefinition, operations, types:
 const parseObjectTypes = ({ schema: rootSchema, apiDefinition, operations, types: typesCache, createResolver, discriminatorFieldName }) => {
 	traverse(rootSchema).forEach(
 		function parseObjectType(schema, context) {
-			const isObjectWithProperties = schema.type === 'object' && !!schema.properties;
-			const isPlainType = (!context.parent || context.parent.key !== 'allOf') && (isObjectWithProperties || isArray(schema.allOf));
-			const isCached = schema.$$type;
+			const isObjectWithProperties = schema && schema.type === 'object' && !!schema.properties;
+			const isPlainType = schema && (!context.parent || context.parent.key !== 'allOf') && (isObjectWithProperties || isArray(schema.allOf));
+			const isCached = schema && schema.$$type;
 			if (isPlainType && !isCached) {
 				checkObjectSchemaForUnsupportedFeatures(schema);
 				const schemaId = Symbol(TYPE_SCHEMA_SYMBOL_LABEL);
@@ -375,9 +379,9 @@ const parseObjectTypes = ({ schema: rootSchema, apiDefinition, operations, types
 const parseInputObjectTypes = ({ schema: rootSchema, apiDefinition, operations, types: typesCache, createResolver, discriminatorFieldName }) => {
 	traverse(rootSchema).forEach(
 		function parseObjectType(schema, context) {
-			const isObjectWithProperties = schema.type === 'object' && !!schema.properties;
-			const isPlainType = (!context.parent || context.parent.key !== 'allOf') && (isObjectWithProperties || isArray(schema.allOf));
-			const isCached = schema.$$inputType;
+			const isObjectWithProperties = schema && schema.type === 'object' && !!schema.properties;
+			const isPlainType = schema && (!context.parent || context.parent.key !== 'allOf') && (isObjectWithProperties || isArray(schema.allOf));
+			const isCached = schema && schema.$$inputType;
 			const baseName = extractTypeName(context);
 			const name = `${baseName}Input`;
 			if (isPlainType && !isCached) {
@@ -633,6 +637,9 @@ const parseInputLists = ({ schema: rootSchema, types: typesCache }) => {
 				let innerType = scalarTypeFromSchema(schema.items);
 				if (!innerType) {
 					innerType = typesCache[schema.items.$$inputType];
+				}
+				if (!innerType) {
+					innerType = typesCache[schema.items.$$type]; // FIXME this branch is effectively only for enums
 				}
 				if (!innerType) {
 					throw new Error(`No graphql type found for schema\n\n${JSON.stringify(schema.items, null, 2)}`);

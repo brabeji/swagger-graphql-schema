@@ -156,9 +156,6 @@ const parseEnums = ({ schema: rootSchema, operations, types: typesCache }) => {
 			// const isEnum = (schema.type === 'string' || schema.type === 'boolean') && isArray(schema.enum);
 			const isEnum = schema && (schema.type === 'string') && isArray(schema.enum);
 			const isCached = schema && schema.$$type;
-			if (isEnum) {
-				console.log('isEnum', isEnum, 'isCached', isCached, schema);
-			}
 			if (isEnum && !isCached) {
 				const schemaId = Symbol(TYPE_SCHEMA_SYMBOL_LABEL);
 				schema.$$type = schemaId;

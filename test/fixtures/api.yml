@@ -12,6 +12,9 @@ paths:
           in: body
           schema:
             $ref: '#/definitions/LoginPayload'
+        - name: Accept-Language
+          in: header
+          type: string
       responses:
         200:
           schema:

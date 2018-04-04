@@ -220,7 +220,7 @@ const constructOperationArgsAndResolver = (apiDefinition, operations, links, pro
 					['x-argPath']: argPath,
 					schema: paramSchema,
 				} = parameter;
-				if (!argPath) {
+				if (!argPath && paramIn !== 'header') {
 					// this is a root operation or resolution path is not defined => parameter is required
 					let type;
 					if (parameterType) {

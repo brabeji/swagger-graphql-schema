@@ -272,9 +272,12 @@ test.only('xxx', (t) => {
 					gqlSchema,
 					gql`
                       query S {
-                        __schema {
-                          types {
+                        __type(name: "Post") {
+                          fields {
                             name
+                            args {
+                              name
+                            }
                           }
                         }
                       }
@@ -289,6 +292,7 @@ test.only('xxx', (t) => {
 		)
 		.then(
 			(result) => {
+				console.log(JSON.stringify(result, null, 2));
 				// console.log(JSON.stringify(result.data.__schema.types.map(({name}) => name).join(", "), null, 2));
 				t.end();
 			},

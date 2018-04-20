@@ -177,7 +177,7 @@ const parseEnums = ({ schema: rootSchema, operations, types: typesCache }) => {
 	);
 };
 
-const constructOperationArgsAndResolver = (apiDefinition, operations, links, propertyName, createResolver, typesCache) => {
+const constructOperationArgsAndResolver = (apiDefinition, operations, links, propertyName, createResolver, typesCache, typeName) => {
 	const operation = g(operations, g(links, propertyName));
 	let resolve;
 	let args;
@@ -220,7 +220,7 @@ const constructOperationArgsAndResolver = (apiDefinition, operations, links, pro
 					['x-argPath']: argPath,
 					schema: paramSchema,
 				} = parameter;
-				if (!argPath && paramIn !== 'header') {
+				if ((!argPath || typeName === 'Query') && paramIn !== 'header') {
 					// this is a root operation or resolution path is not defined => parameter is required
 					let type;
 					if (parameterType) {
@@ -260,9 +260,10 @@ const parseInterfaces = ({ schema: rootSchema, apiDefinition, operations, types:
 				const schemaId = Symbol(TYPE_SCHEMA_SYMBOL_LABEL);
 				schema.$$type = schemaId;
 				const { properties, ['x-links']: links, required } = schema;
+				const name = extractTypeName(context);
 				typesCache[schemaId] = new GraphQLInterfaceType(
 					{
-						name: extractTypeName(context),
+						name,
 						fields: () => Object.keys(properties).reduce(
 							(acc, propertyName) => {
 								const propertySchema = properties[propertyName];
@@ -284,6 +285,7 @@ const parseInterfaces = ({ schema: rootSchema, apiDefinition, operations, types:
 									propertyName,
 									createResolver,
 									typesCache,
+									name,
 								);
 								const propertyDescriptor = {
 									type,
@@ -356,6 +358,7 @@ const parseObjectTypes = ({ schema: rootSchema, apiDefinition, operations, types
 									propertyName,
 									createResolver,
 									typesCache,
+									name,
 								);
 								const propertyDescriptor = {
 									type,

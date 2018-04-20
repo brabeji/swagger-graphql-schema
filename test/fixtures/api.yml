@@ -77,6 +77,15 @@ paths:
   /posts/{postId}/tags:
     get:
       operationId: postTags
+      parameters:
+        - name: postId
+          in: path
+          x-argPath: root.id
+          required: true
+          type: string
+        - name: filter
+          in: query
+          type: string
       responses:
         200:
           description: post tags

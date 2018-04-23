@@ -74,6 +74,19 @@ paths:
           description: success
           schema:
             $ref: '#/definitions/Post'
+  /posts/{postId}:
+    get:
+      operationId: Post
+      parameters:
+        - name: postId
+          in: path
+          required: true
+          type: string
+      responses:
+        200:
+          description: Post
+          schema:
+            $ref: '#/definitions/Tag'
   /posts/{postId}/tags:
     get:
       operationId: postTags

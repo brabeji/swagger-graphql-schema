@@ -1,6 +1,6 @@
 {
   "name": "swagger-graphql-schema",
-  "version": "0.1.12-dev",
+  "version": "0.1.13-dev",
   "main": "./lib/index.js",
   "license": "MIT",
   "scripts": {

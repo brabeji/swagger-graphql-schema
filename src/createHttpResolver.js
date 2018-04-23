@@ -19,7 +19,7 @@ const createHttpResolver = ({ apiDefinition, propertyName, operation: operationD
 		const parameters = g(operationDescriptor, 'parameters');
 		const parametersValues = parameters.reduce(
 			(acc, { name: paramName, ['x-argPath']: argPath, ['in']: paramIn }) => {
-				const value = g(argsValues, argPath || paramName);
+				const value = g(argsValues, argPath, g(argsValues, paramName));
 				if (value && paramIn === 'query') {
 					return {
 						...acc,

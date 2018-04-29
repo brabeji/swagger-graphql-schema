@@ -258,7 +258,7 @@ test.only('xxx', (t) => {
 		.then(
 			(swagger) => {
 				try {
-					gqlSchema = swaggerToSchema({ swagger, createResolver: createFakerResolver });
+					gqlSchema = swaggerToSchema({ swagger, createResolver: createFakerResolver, ignoreRequired: true });
 				} catch (error) {
 					t.error(error, 'swaggerToSchema thrown');
 					return;
@@ -292,7 +292,7 @@ test.only('xxx', (t) => {
 		)
 		.then(
 			(result) => {
-				console.log(JSON.stringify(result, null, 2));
+				// console.log(JSON.stringify(result, null, 2));
 				// console.log(JSON.stringify(result.data.__schema.types.map(({name}) => name).join(", "), null, 2));
 				t.end();
 			},

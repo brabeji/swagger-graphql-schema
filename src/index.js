@@ -250,7 +250,7 @@ const constructOperationArgsAndResolver = (apiDefinition, operations, links, pro
 	return { args, resolve };
 };
 
-const parseInterfaces = ({ schema: rootSchema, apiDefinition, operations, types: typesCache, createResolver }) => {
+const parseInterfaces = ({ schema: rootSchema, apiDefinition, operations, types: typesCache, createResolver, ignoreRequired }) => {
 	traverse(rootSchema).forEach(
 		function parseInterface(schema, context) {
 			const isInterface = context.parent && context.parent.key === 'allOf' && schema.type === 'object' && isString(schema.title);
@@ -271,7 +271,7 @@ const parseInterfaces = ({ schema: rootSchema, apiDefinition, operations, types:
 								if (!type) {
 									type = typesCache[propertySchema.$$type];
 								}
-								if (includes(required, propertyName)) {
+								if (!ignoreRequired && includes(required, propertyName)) {
 									try {
 										type = makeTypeRequired(type);
 									} catch (error) {
@@ -303,7 +303,7 @@ const parseInterfaces = ({ schema: rootSchema, apiDefinition, operations, types:
 	);
 };
 
-const parseObjectTypes = ({ schema: rootSchema, apiDefinition, operations, types: typesCache, createResolver, discriminatorFieldName }) => {
+const parseObjectTypes = ({ schema: rootSchema, apiDefinition, operations, types: typesCache, createResolver, discriminatorFieldName, ignoreRequired }) => {
 	traverse(rootSchema).forEach(
 		function parseObjectType(schema, context) {
 			const isObjectWithProperties = schema && schema.type === 'object' && !!schema.properties;
@@ -344,7 +344,7 @@ const parseObjectTypes = ({ schema: rootSchema, apiDefinition, operations, types
 								if (!type) {
 									type = typesCache[propertySchema.$$type];
 								}
-								if (includes(required, propertyName)) {
+								if (!ignoreRequired && includes(required, propertyName)) {
 									try {
 										type = makeTypeRequired(type);
 									} catch (error) {
@@ -650,7 +650,7 @@ const parseInputLists = ({ schema: rootSchema, types: typesCache }) => {
 	);
 };
 
-const swaggerToSchema = ({ swagger: { paths }, swagger, createResolver, discriminatorFieldName = 'typeName' } = {}) => {
+const swaggerToSchema = ({ swagger: { paths }, swagger, createResolver, discriminatorFieldName = 'typeName', ignoreRequired = false } = {}) => {
 	const queriesDescriptions = findQueriesDescriptions(paths);
 	const mutationsDescriptions = findMutationsDescriptions(paths);
 	const operations = { ...queriesDescriptions, ...mutationsDescriptions };
@@ -704,6 +704,7 @@ const swaggerToSchema = ({ swagger: { paths }, swagger, createResolver, discrimi
 					apiDefinition: completeSchema,
 					types,
 					createResolver,
+					ignoreRequired,
 				}
 			);
 		},
@@ -732,7 +733,8 @@ const swaggerToSchema = ({ swagger: { paths }, swagger, createResolver, discrimi
 					apiDefinition: completeSchema,
 					types,
 					createResolver,
-					discriminatorFieldName
+					discriminatorFieldName,
+					ignoreRequired,
 				}
 			);
 			parseUnions({ schema, types, discriminatorFieldName });

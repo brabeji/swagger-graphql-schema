@@ -119,16 +119,27 @@ const createHttpResolver = ({ apiDefinition, propertyName, operation: operationD
 		)
 		.catch(
 			(error) => {
+				const { response } = error;
+
 				if (process.env.NODE_ENV === 'development') {
 					console.log(`Resolver error for GET "${resourceUri}"`);
 				}
 
 				throw new ApiError(
-					{
-						code: error.response.status,
-						data: error.response.data,
-					}
-				)
+					!response ? (
+						{
+							data: {
+								...error,
+								message: error.toString(),
+							},
+						}
+					) : (
+						{
+							code: response.status,
+							data: response.data,
+						}
+					)
+				);
 			}
 		)
 	};

@@ -135,7 +135,7 @@ RefParser
 		(bundledSwagger) => {
 			const schema = swaggerToSchema(
 				{ 
-					dereferenceLocalAbsoluteJsonPointers(swagger), 
+					schema: dereferenceLocalAbsoluteJsonPointers(swagger), 
 					createResolver: createHttpResolver, 
 					// createResolver: createFakerResolver, for json-schema-faker data 
 				}

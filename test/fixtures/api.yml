@@ -86,7 +86,7 @@ paths:
         200:
           description: Post
           schema:
-            $ref: '#/definitions/Tag'
+            $ref: '#/definitions/TagKey'
   /posts/{postId}/tags:
     get:
       operationId: postTags
@@ -105,7 +105,7 @@ paths:
           schema:
             type: array
             items:
-              $ref: '#/definitions/Tag'
+              $ref: '#/definitions/TagKey'
   /tag-search:
     get:
       operationId: tagSearchResults
@@ -138,7 +138,7 @@ paths:
             items:
               anyOf:
                 - $ref: '#/definitions/Post'
-                - $ref: '#/definitions/Tag'
+                - $ref: '#/definitions/TagKey'
                 - $ref: '#/definitions/Category'
 definitions:
   LoginPayload:
@@ -184,7 +184,7 @@ definitions:
       tags:
         type: array
         items:
-          $ref: '#/definitions/Tag'
+          $ref: '#/definitions/TagKey'
         readOnly: true
   Post:
     title: Post
@@ -243,8 +243,8 @@ definitions:
       - DRAFT
       - PUBLISHED
       - DELETED
-  PostSize:
-    title: PostSize
+  PostSizeKey:
+    x-typeName: PostSize
     type: string
     enum:
       - SMALL
@@ -259,8 +259,8 @@ definitions:
       - TAG_A
       - TAG_B
       - TAG_C
-  Tag:
-    title: Tag
+  TagKey:
+    x-typeName: Tag
     type: object
     properties:
       typeName:

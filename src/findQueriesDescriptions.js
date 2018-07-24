@@ -1,4 +1,5 @@
 import { get as g, reduce, mapValues, isArray, find } from 'lodash';
+import { TYPE_NAME_VENDOR_PROPERTY_NAME } from './constants';
 
 const findQueriesDescriptions = (paths) => {
 	return reduce(
@@ -25,7 +26,10 @@ const findQueriesDescriptions = (paths) => {
 								...acc,
 								[operationId]: {
 									path,
-									schema: schema.title ? schema : { ...schema, title: operationId },
+									schema: (schema.title || schema[TYPE_NAME_VENDOR_PROPERTY_NAME]) ? schema : {
+										...schema,
+										[TYPE_NAME_VENDOR_PROPERTY_NAME]: operationId
+									},
 									// schema,
 									parameters: g(operation, 'parameters', []).concat(g(pathMethods, 'parameters', [])),
 									consumes,

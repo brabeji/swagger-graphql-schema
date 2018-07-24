@@ -1,4 +1,5 @@
 import { get as g, reduce, mapValues, isArray, find, includes } from 'lodash';
+import { TYPE_NAME_VENDOR_PROPERTY_NAME } from './constants';
 
 const findMutationsDescriptions = (paths) => {
 	return reduce(
@@ -34,7 +35,10 @@ const findMutationsDescriptions = (paths) => {
 								[operationId]: {
 									path,
 									inputSchema,
-									schema: schema.title ? schema : { ...schema, title: operationId },
+									schema: (schema.title || schema[TYPE_NAME_VENDOR_PROPERTY_NAME]) ? schema : {
+										...schema,
+										[TYPE_NAME_VENDOR_PROPERTY_NAME]: operationId
+									},
 									// schema,
 									parameters,
 									operationMethod: lcMethod,

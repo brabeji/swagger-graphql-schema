@@ -44,6 +44,7 @@ import findQueriesDescriptions from './findQueriesDescriptions';
 import findMutationsDescriptions from './findMutationsDescriptions';
 import invariant from 'invariant';
 import { reduce } from 'lodash';
+import { TYPE_NAME_VENDOR_PROPERTY_NAME } from './constants';
 
 const SCALAR_TYPE_MAP = {
 	integer: GraphQLInt,
@@ -98,8 +99,8 @@ const checkObjectSchemaForUnsupportedFeatures = (schema) => {
 const extractTypeName = (nodeContext) => {
 	// console.log('nodeContext.node', nodeContext.node.title);
 	const schema = nodeContext.node;
-	if (schema && isString(schema.title)) {
-		return schema.title;
+	if (schema && (isString(schema.title) || isString(schema[TYPE_NAME_VENDOR_PROPERTY_NAME]))) {
+		return schema[TYPE_NAME_VENDOR_PROPERTY_NAME] || schema.title;
 	}
 	if (nodeContext.parent && nodeContext.parent.parent && nodeContext.parent.parent.node.type === 'object') {
 		return `${extractTypeName(nodeContext.parent)}_${nodeContext.key}`;
@@ -253,7 +254,7 @@ const constructOperationArgsAndResolver = (apiDefinition, operations, links, pro
 const parseInterfaces = ({ schema: rootSchema, apiDefinition, operations, types: typesCache, createResolver, ignoreRequired }) => {
 	traverse(rootSchema).forEach(
 		function parseInterface(schema, context) {
-			const isInterface = context.parent && context.parent.key === 'allOf' && schema.type === 'object' && isString(schema.title);
+			const isInterface = context.parent && context.parent.key === 'allOf' && schema.type === 'object' && (isString(schema.title) || isString(schema[TYPE_NAME_VENDOR_PROPERTY_NAME]));
 			const isCached = schema && schema.$$type;
 			if (isInterface && !isCached) {
 				checkObjectSchemaForUnsupportedFeatures(schema);
@@ -474,7 +475,7 @@ const constructInputType = ({ schema, typeName: inputTypeName, typesCache, isNes
 					(acc, unionPartSchema) => {
 						return {
 							...acc,
-							[unionPartSchema.title]: constructInputType({
+							[unionPartSchema[TYPE_NAME_VENDOR_PROPERTY_NAME] || unionPartSchema.title]: constructInputType({
 								schema: unionPartSchema,
 								typesCache,
 								isNestedUnderEntity: isNestedUnderEntity,
@@ -537,7 +538,7 @@ const parseRootInputTypes = ({ schema: rootSchema, types: typesCache, discrimina
 			const isCachedRootInputType = schema.$$rootInputType;
 			if (isRootInputType && !isCachedRootInputType) {
 				schema.$$rootInputType = Symbol(TYPE_SCHEMA_SYMBOL_LABEL);
-				const typeName = schema.title || `Mutation_${context.parent.parent.parent.node.operationId}`;
+				const typeName = schema[TYPE_NAME_VENDOR_PROPERTY_NAME] || schema.title || `Mutation_${context.parent.parent.parent.node.operationId}`;
 				typesCache[schema.$$rootInputType] = constructInputType({
 					schema,
 					typesCache,
@@ -594,7 +595,7 @@ const parseInputUnions = ({ schema: rootSchema, types: typesCache, discriminator
 						inputTypes: reduce(schema.anyOf, (acc, subSchema) => {
 							return {
 								...acc,
-								[subSchema.title]: typesCache[subSchema.$$inputType],
+								[subSchema[TYPE_NAME_VENDOR_PROPERTY_NAME] || subSchema.title]: typesCache[subSchema.$$inputType],
 							};
 						}, {}),
 						typeKey: discriminatorFieldName,
@@ -660,7 +661,7 @@ const swaggerToSchema = ({ swagger: { paths }, swagger, createResolver, discrimi
 		definitions: {
 			...(swagger.definitions || {}),
 			Query: {
-				title: 'Query',
+				[TYPE_NAME_VENDOR_PROPERTY_NAME]: 'Query',
 				type: 'object',
 				description: 'query root type',
 				properties: mapValues(
@@ -673,7 +674,7 @@ const swaggerToSchema = ({ swagger: { paths }, swagger, createResolver, discrimi
 				),
 			},
 			Mutation: {
-				title: 'Mutation',
+				[TYPE_NAME_VENDOR_PROPERTY_NAME]: 'Mutation',
 				type: 'object',
 				description: 'mutation root type',
 				properties: mapValues(

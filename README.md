@@ -54,7 +54,8 @@ definitions:
     required:
       - name
   Post:
-    title: Post
+    title: Some descriptive title
+    x-typeName: Post # when present, x-typeName takes precendence over title in specifying name of type
     allOf:
       - $ref: '#/definitions/Node' # GraphQLInterfaceType is generated when object schema is encountered under allOf
       # Referencing Node schema both inside and outside of allOf will result in duplicate type name error.
@@ -134,10 +135,10 @@ RefParser
 	.then(
 		(bundledSwagger) => {
 			const schema = swaggerToSchema(
-				{ 
-					schema: dereferenceLocalAbsoluteJsonPointers(bundledSwagger), 
-					createResolver: createHttpResolver, 
-					// createResolver: createFakerResolver, for json-schema-faker data 
+				{
+					schema: dereferenceLocalAbsoluteJsonPointers(bundledSwagger),
+					createResolver: createHttpResolver,
+					// createResolver: createFakerResolver, for json-schema-faker data
 				}
 			);
 			console.log(printSchema(schema));
@@ -149,7 +150,7 @@ Outputs:
 
 ```graphql
 scalar EmailAddress
-    
+
 type Mutation {
   createPost(input: PostInput): Post
 }

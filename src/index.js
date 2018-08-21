@@ -265,7 +265,7 @@ const parseInterfaces = ({ schema: rootSchema, apiDefinition, operations, types:
 				typesCache[schemaId] = new GraphQLInterfaceType(
 					{
 						name,
-						fields: () => Object.keys(properties).reduce(
+						fields: () => Object.keys(properties || {}).reduce(
 							(acc, propertyName) => {
 								const propertySchema = properties[propertyName];
 								let type = scalarTypeFromSchema(propertySchema);
@@ -338,7 +338,7 @@ const parseObjectTypes = ({ schema: rootSchema, apiDefinition, operations, types
 							}
 							return true;
 						},
-						fields: () => Object.keys(properties).filter(propertyName => propertyName !== discriminatorFieldName).reduce(
+						fields: () => Object.keys(properties || {}).filter(propertyName => propertyName !== discriminatorFieldName).reduce(
 							(acc, propertyName) => {
 								const propertySchema = properties[propertyName];
 								let type = scalarTypeFromSchema(propertySchema);
@@ -493,7 +493,7 @@ const constructInputType = ({ schema, typeName: inputTypeName, typesCache, isNes
 		schema[IS_IN_INPUT_TYPE_CHAIN_SYMBOL] = true;
 		const { properties, required } = mergeAllOf(schema);
 
-		const hasID = Object.keys(properties).reduce((acc, pn) => acc || isIdSchema(properties[pn]), false);
+		const hasID = Object.keys(properties || {}).reduce((acc, pn) => acc || isIdSchema(properties[pn]), false);
 		// const requireOnlyIdInput = hasID && isNestedUnderEntity;
 
 		inputType = new GraphQLInputObjectType(

@@ -125,21 +125,21 @@ const createHttpResolver = ({ apiDefinition, propertyName, operation: operationD
 					console.log(`Resolver error for GET "${resourceUri}"`);
 				}
 
-				throw new ApiError(
-					!response ? (
-						{
-							data: {
-								...error,
-								message: error.toString(),
-							},
-						}
-					) : (
-						{
-							code: response.status,
-							data: response.data,
-						}
-					)
-				);
+				return Promise.reject(new ApiError(
+          !response ? (
+            {
+              data: {
+                ...error,
+                message: error.toString(),
+              },
+            }
+          ) : (
+            {
+              code: response.status,
+              data: response.data,
+            }
+          )
+        ));
 			}
 		)
 	};

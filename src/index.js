@@ -1,18 +1,14 @@
-import dereferenceLocalAbsoluteJsonPointers from './dereferenceLocalAbsoluteJsonPointers';
-
+import invariant from 'invariant';
 import {
-	mapValues,
+	filter,
+	first,
 	get as g,
 	includes,
-	isString,
 	isArray,
 	isObject,
-	filter,
-	each,
-	merge,
-	find,
-	first,
-	cloneDeep,
+	isString,
+	mapValues,
+	reduce,
 } from 'lodash';
 import {
 	GraphQLSchema,
@@ -39,12 +35,13 @@ import GraphQLJSON from 'graphql-type-json';
 import GraphQLUnionInputType from 'graphql-union-input-type';
 // import {} from "graphql-tools-types" TODO constrained Int, Float, String...
 import { GraphQLEmailAddress } from 'graphql-scalars'
-import traverse from './traverse';
-import findQueriesDescriptions from './findQueriesDescriptions';
-import findMutationsDescriptions from './findMutationsDescriptions';
-import invariant from 'invariant';
-import { reduce } from 'lodash';
+
 import { TYPE_NAME_VENDOR_PROPERTY_NAME } from './constants';
+import dereferenceLocalAbsoluteJsonPointers from './dereferenceLocalAbsoluteJsonPointers';
+import findMutationsDescriptions from './findMutationsDescriptions';
+import findQueriesDescriptions from './findQueriesDescriptions';
+import isTypeOf from './isTypeOf';
+import traverse from './traverse';
 
 const SCALAR_TYPE_MAP = {
 	integer: GraphQLInt,
@@ -142,7 +139,7 @@ const scalarTypeFromSchema = (schema, schemaName) => {
 		if (isArray(valueType) && valueType.length === 2 && includes(valueType, 'null')) {
 			valueType = first(filter(valueType, (v) => v !== 'null'));
 		}
-		if (valueType === 'object' && (!g(schema, 'properties') && !g(schema, 'allOf') && !g(schema, 'anyOf'))) {
+		if (valueType === 'object' && (!g(schema, 'properties') && !g(schema, 'allOf') && !g(schema, 'anyOf') && !g(schema, 'oneOf'))) {
 			valueType = 'json';
 		}
 		resultingType = SCALAR_TYPE_MAP[valueType];
@@ -489,6 +486,29 @@ const constructInputType = ({ schema, typeName: inputTypeName, typesCache, isNes
 		)
 	}
 
+	if (isArray(schema.oneOf)) {
+		inputType = new GraphQLUnionInputType(
+			{
+				name: typeName,
+				inputTypes: reduce(
+					schema.oneOf,
+					(acc, unionPartSchema) => {
+						return {
+							...acc,
+							[unionPartSchema[TYPE_NAME_VENDOR_PROPERTY_NAME] || unionPartSchema.title]: constructInputType({
+								schema: unionPartSchema,
+								typesCache,
+								isNestedUnderEntity: isNestedUnderEntity,
+								typeName: inputTypeName,
+							}),
+						};
+					}
+				),
+				typeKey: discriminatorFieldName,
+			}
+		)
+	}
+
 	if (!inputType) {
 		schema[IS_IN_INPUT_TYPE_CHAIN_SYMBOL] = true;
 		const { properties, required } = mergeAllOf(schema);
@@ -553,25 +573,37 @@ const parseRootInputTypes = ({ schema: rootSchema, types: typesCache, discrimina
 const parseUnions = ({ schema: rootSchema, types: typesCache, discriminatorFieldName }) => {
 	traverse(rootSchema).forEach(
 		function parseUnion(schema, context) {
-			const isUnion = schema && isArray(schema.anyOf);
+			const isAnyOf = schema && isArray(schema.anyOf);
+			const isOneOf = schema && isArray(schema.oneOf);
+			const isUnion = isAnyOf || isOneOf;
 			const isCached = schema && schema.$$type;
+
+			const getTypes = () => {
+				return (isAnyOf ? schema.anyOf : schema.oneOf).map(
+					(subSchema) => {
+						return typesCache[subSchema.$$type];
+					}
+				)
+			};
+
 			if (isUnion && !isCached) {
 				const schemaId = Symbol(TYPE_SCHEMA_SYMBOL_LABEL);
 				schema.$$type = schemaId;
 				typesCache[schemaId] = new GraphQLUnionType(
 					{
 						name: extractTypeName(context),
-						types: () => {
-							return schema.anyOf.map(
-								(subSchema) => {
-									return typesCache[subSchema.$$type];
-								}
-							)
-						},
+						types: getTypes,
 						resolveType: (value) => {
 							if (value[discriminatorFieldName]) {
 								return value[discriminatorFieldName];
+							} else {
+								for (const type of getTypes()) {
+									if (isTypeOf(value, type)) {
+										return type.name;
+									}
+								}
 							}
+							return undefined;
 						},
 					}
 				);
@@ -583,7 +615,9 @@ const parseUnions = ({ schema: rootSchema, types: typesCache, discriminatorField
 const parseInputUnions = ({ schema: rootSchema, types: typesCache, discriminatorFieldName }) => {
 	traverse(rootSchema).forEach(
 		function parseUnion(schema, context) {
-			const isUnion = schema && isArray(schema.anyOf);
+			const isAnyOf = schema && isArray(schema.anyOf);
+			const isOneOf = schema && isArray(schema.oneOf);
+			const isUnion = isAnyOf || isOneOf;
 			const isCached = schema && schema.$$inputType;
 			if (isUnion && !isCached) {
 				const schemaId = Symbol(TYPE_SCHEMA_SYMBOL_LABEL);
@@ -592,7 +626,7 @@ const parseInputUnions = ({ schema: rootSchema, types: typesCache, discriminator
 				typesCache[schemaId] = new GraphQLUnionInputType(
 					{
 						name: `${extractTypeName(context)}Input`,
-						inputTypes: reduce(schema.anyOf, (acc, subSchema) => {
+						inputTypes: reduce((isAnyOf ? schema.anyOf : schema.oneOf), (acc, subSchema) => {
 							return {
 								...acc,
 								[subSchema[TYPE_NAME_VENDOR_PROPERTY_NAME] || subSchema.title]: typesCache[subSchema.$$inputType],
